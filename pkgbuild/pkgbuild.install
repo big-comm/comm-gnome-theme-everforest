@@ -1,82 +1,123 @@
 #!/usr/bin/env bash
-# This file contains scripts that are executed at different stages of package installation/upgrade/removal
+# Installation script for Everforest Medium Dark theme
 
-# Color definitions for status messages
-blueDark="\e[1;38;5;33m"     # Bold dark blue
-mediumBlue="\e[1;38;5;32m"   # Bold medium blue
-lightBlue="\e[1;38;5;39m"    # Bold light blue
-cyan="\e[1;38;5;45m"         # Bold cyan
-white="\e[1;97m"             # Bold white
-reset="\e[0m"                # Reset text formatting
+set -e
 
-# Print status messages - CHANGE 'PACKAGE_NAME' to your actual package name
+THEME_NAME="Everforest-Dark-Medium-B"
+WALLPAPER_NAME="bokeh-small-plant.heic"
+WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
+USER_HOME="${HOME}"
+CONFIG_DIR="${USER_HOME}/.config"
+
+# Color definitions
+darkGreen="\e[1;38;5;22m"
+lightGreen="\e[1;38;5;34m"
+cyan="\e[1;38;5;45m"
+white="\e[1;97m"
+reset="\e[0m"
+
+# Print status messages
 printMsg() {
     local message=$1
-    echo -e "${blueDark}[${lightBlue}PACKAGE_NAME${blueDark}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
+    echo -e "${darkGreen}[${lightGreen}everforest${darkGreen}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
 }
 
-# Function executed before package installation
-# pre_install() {
-#     printMsg "Preparing to install the package..."
-#     # Example: Check for system dependencies
-#     # if ! command -v required_command &> /dev/null; then
-#     #     printMsg "Error: required_command not found. Please install it before continuing."
-#     #     exit 1
-#     # fi
-# }
+printMsg "Installing Everforest Medium Dark Theme"
+echo ""
 
-# Function executed after package installation
-# post_install() {
-#     printMsg "Configuring the package after installation..."
-#     # Example: Create a configuration directory
-#     # mkdir -p /etc/mypackage
-#     # chmod 755 /etc/mypackage
-#     # printMsg "Created configuration directory"
-#
-#     # Example: Start a service
-#     # systemctl enable myservice.service
-#     # systemctl start myservice.service
-#     # printMsg "Service enabled and started"
-# }
+# Function to backup existing configurations
+backup_config() {
+    local file="$1"
+    if [ -f "${file}" ]; then
+        printMsg "Backing up $(basename ${file})..."
+        cp "${file}" "${file}.backup-$(date +%Y%m%d-%H%M%S)"
+    fi
+}
 
-# Function executed before package upgrade
-# pre_upgrade() {
-#     printMsg "Preparing to upgrade the package..."
-#     # Example: Backup configuration files
-#     # cp /etc/mypackage/config.conf /etc/mypackage/config.conf.bak
-#     # printMsg "Configuration backup created"
-# }
+# Apply GTK3 theme
+printMsg "[1/3] Configuring GTK3 theme..."
+GTK3_CONFIG="${CONFIG_DIR}/gtk-3.0/settings.ini"
+mkdir -p "${CONFIG_DIR}/gtk-3.0"
 
-# Function executed after package upgrade
-# post_upgrade() {
-#     printMsg "Finalizing package upgrade..."
-#     # Usually, post_install is called here to ensure
-#     # all post-installation configurations are applied
-#     # post_install
-#
-#     # Example: Check and update configuration files
-#     # if [ -f /etc/mypackage/config.conf.pacnew ]; then
-#     #     printMsg "New configuration file available. Please review /etc/mypackage/config.conf.pacnew"
-#     # fi
-#     # printMsg "Upgrade completed successfully"
-# }
+if [ -f "${GTK3_CONFIG}" ]; then
+    backup_config "${GTK3_CONFIG}"
+    # Update or add theme setting
+    if grep -q "gtk-theme-name" "${GTK3_CONFIG}"; then
+        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK3_CONFIG}"
+    else
+        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK3_CONFIG}"
+    fi
+else
+    cat > "${GTK3_CONFIG}" << EOF
+[Settings]
+gtk-theme-name=${THEME_NAME}
+gtk-application-prefer-dark-theme=true
+EOF
+fi
 
-# Function executed before package removal
-# pre_remove() {
-#     printMsg "Preparing to remove the package..."
-#     # Example: Stop services
-#     # systemctl stop myservice.service
-#     # systemctl disable myservice.service
-#     # printMsg "Services stopped"
-# }
+# Apply GTK4 theme
+printMsg "[2/3] Configuring GTK4 theme..."
+GTK4_CONFIG="${CONFIG_DIR}/gtk-4.0/settings.ini"
+mkdir -p "${CONFIG_DIR}/gtk-4.0"
 
-# Function executed after package removal
-# post_remove() {
-#     printMsg "Cleaning up after package removal..."
-#     # Example: Remove data directories created by the package
-#     # rm -rf /var/lib/mypackage
-#     # printMsg "Package directories removed"
-#
-#     # printMsg "If you want to remove all user data, run:"
-#     # printMsg "rm -rf /home/*/mypackage_data"
-# }
+if [ -f "${GTK4_CONFIG}" ]; then
+    backup_config "${GTK4_CONFIG}"
+    # Update or add theme setting
+    if grep -q "gtk-theme-name" "${GTK4_CONFIG}"; then
+        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK4_CONFIG}"
+    else
+        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK4_CONFIG}"
+    fi
+else
+    cat > "${GTK4_CONFIG}" << EOF
+[Settings]
+gtk-theme-name=${THEME_NAME}
+gtk-application-prefer-dark-theme=true
+EOF
+fi
+
+# Link GTK4 assets and CSS files
+printMsg "Linking GTK4 assets..."
+GTK4_ASSETS="${CONFIG_DIR}/gtk-4.0/assets"
+THEME_ASSETS="/usr/share/themes/${THEME_NAME}/gtk-4.0/assets"
+
+if [ -d "${THEME_ASSETS}" ]; then
+    rm -rf "${GTK4_ASSETS}"
+    ln -sf "${THEME_ASSETS}" "${GTK4_ASSETS}"
+fi
+
+# Link GTK4 CSS files
+for css_file in gtk.css gtk-dark.css; do
+    if [ -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" ]; then
+        rm -f "${CONFIG_DIR}/gtk-4.0/${css_file}"
+        ln -sf "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" "${CONFIG_DIR}/gtk-4.0/${css_file}"
+    fi
+done
+
+# Apply wallpaper if it exists
+if [ -f "${WALLPAPER_PATH}" ]; then
+    printMsg "[3/3] Setting wallpaper..."
+    # Convert HEIC to a format that GNOME can use if needed
+    if command -v heif-convert &> /dev/null; then
+        CONVERTED_WALLPAPER="${USER_HOME}/.local/share/backgrounds/everforest-wallpaper.jpg"
+        mkdir -p "${USER_HOME}/.local/share/backgrounds"
+        heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}"
+        gsettings set org.gnome.desktop.background picture-uri "file://${CONVERTED_WALLPAPER}"
+    else
+        # Try to use it directly if HEIC is supported
+        gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPER_PATH}"
+    fi
+else
+    printMsg "[3/3] Wallpaper file not found at ${WALLPAPER_PATH}"
+fi
+
+echo ""
+printMsg "Installation Complete!"
+echo ""
+printMsg "Theme: ${THEME_NAME}"
+echo -e "${white}Note: Icon theme was NOT modified as per your request.${reset}"
+echo ""
+printMsg "You may need to restart your session for all changes to take effect."
+printMsg "To apply immediately, you can run:"
+echo -e "${white}  gsettings set org.gnome.desktop.interface gtk-theme '${THEME_NAME}'${reset}"
+echo ""

@@ -1,21 +1,21 @@
-# Maintainer: Tales A. Mendonça <talesam@gmail.com>
+# Maintainer: Narayan Silva <narayan.song@gmail.com>
 
-pkgname=pkgbuild-template
-pkgdesc="Package template for Communitybig"
-# Uncomment and edit the following lines as needed
-#depends=('')
-#makedepends=('')
-#optdepends=('')
-#conflicts=('')
-#provides=('')
-#replaces=('')
+pkgname=comm-gnome-theme-everforest
+pkgdesc="Everforest Medium Dark GNOME theme with GTK, cursors, icons and wallpaper"
 pkgver=$(date +%y.%m.%d)
 pkgrel=$(date +%H%M)
 arch=('any')
 license=('MIT')
 url="https://github.com/big-comm/${pkgname}"
-source=("git+${url}.git")
-md5sums=('SKIP')
+depends=('gtk3' 'gtk4' 'gnome-shell')
+optdepends=('gnome-tweaks: For additional customization')
+
+# Source directly from the Everforest GTK theme repository
+source=(
+    "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git#branch=main"
+    "git+${url}.git"
+)
+sha256sums=('SKIP' 'SKIP')
 
 # Automatically detect and use the correct install file
 if [ -e "${pkgname}.install" ]; then
@@ -25,48 +25,46 @@ elif [ -e "pkgbuild.install" ]; then
 fi
 
 prepare() {
-    cd "${srcdir}/${pkgname}"
-    # Add any preparation steps here, if needed
-    # For example: patch -p1 < "${srcdir}/patch-file.patch"
+    cd "${srcdir}/${pkgname}" || return 1
 }
 
 build() {
-    cd "${srcdir}/${pkgname}"
-    # Add build steps here, if needed
-    # For example: make
+    cd "${srcdir}/${pkgname}" || return 1
+    # No build needed, this is a theme package
 }
 
 check() {
-    cd "${srcdir}/${pkgname}"
-    # Add check/test steps here, if needed
-    # For example: make check
+    cd "${srcdir}/${pkgname}" || return 1
+    # Verify theme directory exists
+    if [ ! -d "${srcdir}/Everforest-GTK-Theme/themes/Everforest-Dark-Medium-B" ]; then
+        echo "Error: Everforest theme not found"
+        return 1
+    fi
 }
 
 package() {
-    cd "${srcdir}/${pkgname}"
+    # Install GTK theme
+    install -d "${pkgdir}/usr/share/themes"
+    cp -r "${srcdir}/Everforest-GTK-Theme/themes/Everforest-Dark-Medium-B" \
+        "${pkgdir}/usr/share/themes/Everforest-Dark-Medium-B"
 
-    # Determine the correct source directory
-    if [ -d "${pkgname}" ]; then
-        srcdir="${srcdir}/${pkgname}/${pkgname}"
-    else
-        srcdir="${srcdir}/${pkgname}"
+    # Install installation script
+    install -Dm755 "${srcdir}/${pkgname}/install.sh" \
+        "${pkgdir}/usr/share/${pkgname}/install.sh"
+
+    # Install wallpapers from usr/share directory
+    if [ -d "${srcdir}/${pkgname}/usr/share" ]; then
+        find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" \) | while read -r wallpaper; do
+            install -Dm644 "${wallpaper}" \
+                "${pkgdir}/usr/share/backgrounds/${pkgname}/$(basename "${wallpaper}")"
+        done
     fi
 
-    # Install files
-    local dirs=("usr" "etc" "opt")
-    for dir in "${dirs[@]}"; do
-        if [ -d "${srcdir}/${dir}" ]; then
-            cp -a "${srcdir}/${dir}" "${pkgdir}/"
-        fi
-    done
+    # Install documentation
+    install -Dm644 "${srcdir}/${pkgname}/README.md" \
+        "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 
-    # Install license file if present
-    if [ -f "LICENSE" ]; then
-        install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
-    fi
-
-    # Install documentation if present
-    if [ -f "README.md" ]; then
-        install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
-    fi
+    # Install license
+    install -Dm644 "${srcdir}/${pkgname}/LICENSE" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
