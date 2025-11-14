@@ -10,7 +10,7 @@ url="https://github.com/big-comm/${pkgname}"
 depends=('gtk3' 'gtk4' 'gnome-shell' 'gtk-engine-murrine')
 makedepends=('git' 'sassc')
 optdepends=('gnome-tweaks: For additional customization'
-            'heif: For HEIC wallpaper conversion')
+            'heif: For AVIF wallpaper conversion')
 
 source=(
     "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git"
@@ -84,7 +84,7 @@ package() {
 
     # Install wallpapers from usr/share directory
     if [ -d "${srcdir}/${pkgname}/usr/share" ]; then
-        find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" \) | while read -r wallpaper; do
+        find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" -o -iname "*.avif" \) | while read -r wallpaper; do
             install -Dm644 "${wallpaper}" \
                 "${pkgdir}/usr/share/backgrounds/${pkgname}/$(basename "${wallpaper}")"
         done

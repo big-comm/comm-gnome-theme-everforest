@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Installation script for Everforest Medium Dark theme
+# Helper to apply or remove the Everforest Medium Dark theme per user
 
 set -e
 
 THEME_NAME="Everforest-Dark-Medium-B"
-WALLPAPER_NAME="bokeh-small-plant.heic"
+WALLPAPER_NAME="bokeh-small-plant.avif"
 WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
 USER_HOME="${HOME}"
 CONFIG_DIR="${USER_HOME}/.config"
+CONVERTED_WALLPAPER="${USER_HOME}/.local/share/backgrounds/everforest-wallpaper.jpg"
+ACTION="install"
 
 # Color definitions
 darkGreen="\e[1;38;5;22m"
@@ -16,16 +18,24 @@ cyan="\e[1;38;5;45m"
 white="\e[1;97m"
 reset="\e[0m"
 
-# Print status messages
 printMsg() {
     local message=$1
     echo -e "${darkGreen}[${lightGreen}everforest${darkGreen}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
 }
 
-printMsg "Installing Everforest Medium Dark Theme"
-echo ""
+usage() {
+    cat <<'EOF'
+Usage: install.sh [--install|--upgrade|--uninstall] [--help]
 
-# Function to backup existing configurations
+Actions:
+  --install, --apply   Apply the Everforest theme for the current user (default)
+  --upgrade            Re-apply the theme after a package upgrade
+  --uninstall, --remove
+                       Remove the theme changes and restore configs when possible
+  --help               Show this message
+EOF
+}
+
 backup_config() {
     local file="$1"
     if [ -f "${file}" ]; then
@@ -34,90 +44,204 @@ backup_config() {
     fi
 }
 
-# Apply GTK3 theme
-printMsg "[1/3] Configuring GTK3 theme..."
-GTK3_CONFIG="${CONFIG_DIR}/gtk-3.0/settings.ini"
-mkdir -p "${CONFIG_DIR}/gtk-3.0"
+restore_backup() {
+    local file="$1"
+    local backups=()
 
-if [ -f "${GTK3_CONFIG}" ]; then
-    backup_config "${GTK3_CONFIG}"
-    # Update or add theme setting
-    if grep -q "gtk-theme-name" "${GTK3_CONFIG}"; then
-        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK3_CONFIG}"
+    shopt -s nullglob
+    backups=("${file}.backup-"*)
+    shopt -u nullglob
+
+    if [ "${#backups[@]}" -gt 0 ]; then
+        local latest="${backups[-1]}"
+        cp "${latest}" "${file}"
+        printMsg "Restored $(basename "${file}") from $(basename "${latest}")"
     else
-        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK3_CONFIG}"
+        rm -f "${file}"
+        printMsg "Removed $(basename "${file}") (no backup found)"
     fi
-else
-    cat > "${GTK3_CONFIG}" << EOF
+}
+
+has_backup() {
+    local file="$1"
+    compgen -G "${file}.backup-*" > /dev/null 2>&1
+}
+
+link_gtk4_assets() {
+    printMsg "Linking GTK4 assets..."
+    local gtk4_assets="${CONFIG_DIR}/gtk-4.0/assets"
+    local theme_assets="/usr/share/themes/${THEME_NAME}/gtk-4.0/assets"
+
+    if [ -d "${theme_assets}" ]; then
+        rm -rf "${gtk4_assets}"
+        ln -sf "${theme_assets}" "${gtk4_assets}"
+    fi
+
+    for css_file in gtk.css gtk-dark.css; do
+        if [ -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" ]; then
+            rm -f "${CONFIG_DIR}/gtk-4.0/${css_file}"
+            ln -sf "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" "${CONFIG_DIR}/gtk-4.0/${css_file}"
+        fi
+    done
+}
+
+unlink_gtk4_assets() {
+    for target in assets gtk.css gtk-dark.css; do
+        local path="${CONFIG_DIR}/gtk-4.0/${target}"
+        if [ -L "${path}" ] || [ -f "${path}" ]; then
+            rm -rf "${path}"
+        fi
+    done
+}
+
+apply_wallpaper() {
+    if [ ! -f "${WALLPAPER_PATH}" ]; then
+        printMsg "[3/3] Wallpaper file not found at ${WALLPAPER_PATH}"
+        return
+    fi
+
+    printMsg "[3/3] Setting wallpaper..."
+    if command -v heif-convert &> /dev/null; then
+        mkdir -p "$(dirname "${CONVERTED_WALLPAPER}")"
+        heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}" >/dev/null
+        if command -v gsettings &> /dev/null; then
+            gsettings set org.gnome.desktop.background picture-uri "file://${CONVERTED_WALLPAPER}" || true
+        fi
+    else
+        if command -v gsettings &> /dev/null; then
+            gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPER_PATH}" || true
+        fi
+    fi
+}
+
+remove_wallpaper() {
+    if [ -f "${CONVERTED_WALLPAPER}" ]; then
+        rm -f "${CONVERTED_WALLPAPER}"
+        printMsg "Removed converted wallpaper copy"
+    fi
+    if command -v gsettings &> /dev/null; then
+        gsettings reset org.gnome.desktop.background picture-uri || true
+    fi
+}
+
+apply_theme() {
+    printMsg "Installing Everforest Medium Dark Theme"
+    echo ""
+
+    local gtk3_config="${CONFIG_DIR}/gtk-3.0/settings.ini"
+    local gtk4_config="${CONFIG_DIR}/gtk-4.0/settings.ini"
+
+    # Apply GTK3 theme
+    printMsg "[1/3] Configuring GTK3 theme..."
+    mkdir -p "${CONFIG_DIR}/gtk-3.0"
+
+    if [ -f "${gtk3_config}" ]; then
+        backup_config "${gtk3_config}"
+        if grep -q "gtk-theme-name" "${gtk3_config}"; then
+            sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${gtk3_config}"
+        else
+            echo "gtk-theme-name=${THEME_NAME}" >> "${gtk3_config}"
+        fi
+    else
+        cat > "${gtk3_config}" << EOF
 [Settings]
 gtk-theme-name=${THEME_NAME}
 gtk-application-prefer-dark-theme=true
 EOF
-fi
-
-# Apply GTK4 theme
-printMsg "[2/3] Configuring GTK4 theme..."
-GTK4_CONFIG="${CONFIG_DIR}/gtk-4.0/settings.ini"
-mkdir -p "${CONFIG_DIR}/gtk-4.0"
-
-if [ -f "${GTK4_CONFIG}" ]; then
-    backup_config "${GTK4_CONFIG}"
-    # Update or add theme setting
-    if grep -q "gtk-theme-name" "${GTK4_CONFIG}"; then
-        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK4_CONFIG}"
-    else
-        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK4_CONFIG}"
     fi
-else
-    cat > "${GTK4_CONFIG}" << EOF
+
+    # Apply GTK4 theme
+    printMsg "[2/3] Configuring GTK4 theme..."
+    mkdir -p "${CONFIG_DIR}/gtk-4.0"
+
+    if [ -f "${gtk4_config}" ]; then
+        backup_config "${gtk4_config}"
+        if grep -q "gtk-theme-name" "${gtk4_config}"; then
+            sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${gtk4_config}"
+        else
+            echo "gtk-theme-name=${THEME_NAME}" >> "${gtk4_config}"
+        fi
+    else
+        cat > "${gtk4_config}" << EOF
 [Settings]
 gtk-theme-name=${THEME_NAME}
 gtk-application-prefer-dark-theme=true
 EOF
-fi
-
-# Link GTK4 assets and CSS files
-printMsg "Linking GTK4 assets..."
-GTK4_ASSETS="${CONFIG_DIR}/gtk-4.0/assets"
-THEME_ASSETS="/usr/share/themes/${THEME_NAME}/gtk-4.0/assets"
-
-if [ -d "${THEME_ASSETS}" ]; then
-    rm -rf "${GTK4_ASSETS}"
-    ln -sf "${THEME_ASSETS}" "${GTK4_ASSETS}"
-fi
-
-# Link GTK4 CSS files
-for css_file in gtk.css gtk-dark.css; do
-    if [ -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" ]; then
-        rm -f "${CONFIG_DIR}/gtk-4.0/${css_file}"
-        ln -sf "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" "${CONFIG_DIR}/gtk-4.0/${css_file}"
     fi
+
+    link_gtk4_assets
+    apply_wallpaper
+
+    echo ""
+    printMsg "Installation Complete!"
+    echo ""
+    printMsg "Theme: ${THEME_NAME}"
+    echo -e "${white}Note: Icon theme was NOT modified.${reset}"
+    echo ""
+    printMsg "You may need to restart your session for all changes to take effect."
+    printMsg "To apply immediately, run:"
+    echo -e "${white}  gsettings set org.gnome.desktop.interface gtk-theme '${THEME_NAME}'${reset}"
+    echo ""
+}
+
+remove_theme() {
+    printMsg "Removing Everforest theme customizations"
+    local gtk3_config="${CONFIG_DIR}/gtk-3.0/settings.ini"
+    local gtk4_config="${CONFIG_DIR}/gtk-4.0/settings.ini"
+
+    if [ -f "${gtk3_config}" ] || has_backup "${gtk3_config}"; then
+        restore_backup "${gtk3_config}"
+    fi
+
+    if [ -f "${gtk4_config}" ] || has_backup "${gtk4_config}"; then
+        restore_backup "${gtk4_config}"
+    fi
+
+    unlink_gtk4_assets
+    remove_wallpaper
+
+    printMsg "Theme settings removed. Reapply anytime with --install."
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --install|--apply)
+            ACTION="install"
+            shift
+            ;;
+        --upgrade)
+            ACTION="upgrade"
+            shift
+            ;;
+        --uninstall|--remove)
+            ACTION="remove"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+    esac
 done
 
-# Apply wallpaper if it exists
-if [ -f "${WALLPAPER_PATH}" ]; then
-    printMsg "[3/3] Setting wallpaper..."
-    # Convert HEIC to a format that GNOME can use if needed
-    if command -v heif-convert &> /dev/null; then
-        CONVERTED_WALLPAPER="${USER_HOME}/.local/share/backgrounds/everforest-wallpaper.jpg"
-        mkdir -p "${USER_HOME}/.local/share/backgrounds"
-        heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}"
-        gsettings set org.gnome.desktop.background picture-uri "file://${CONVERTED_WALLPAPER}"
-    else
-        # Try to use it directly if HEIC is supported
-        gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPER_PATH}"
-    fi
-else
-    printMsg "[3/3] Wallpaper file not found at ${WALLPAPER_PATH}"
-fi
-
-echo ""
-printMsg "Installation Complete!"
-echo ""
-printMsg "Theme: ${THEME_NAME}"
-echo -e "${white}Note: Icon theme was NOT modified as per your request.${reset}"
-echo ""
-printMsg "You may need to restart your session for all changes to take effect."
-printMsg "To apply immediately, you can run:"
-echo -e "${white}  gsettings set org.gnome.desktop.interface gtk-theme '${THEME_NAME}'${reset}"
-echo ""
+case "${ACTION}" in
+    install)
+        apply_theme
+        ;;
+    upgrade)
+        printMsg "Upgrading Everforest theme for the current user"
+        apply_theme
+        ;;
+    remove)
+        remove_theme
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

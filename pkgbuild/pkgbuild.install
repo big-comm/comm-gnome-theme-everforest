@@ -4,10 +4,12 @@ pkgname=comm-gnome-theme-everforest
 
 _print_hint() {
     cat <<'EOF'
-==> Everforest theme files were installed system-wide.
-==> To apply it per user run:
-    /usr/share/comm-gnome-theme-everforest/install.sh
-==> Execute the helper as the target desktop user (not root) because it modifies files in $HOME.
+==> Everforest files installed in /usr/share/themes/Everforest-Dark-Medium-B.
+==> Apply or refresh the theme for your session with:
+    /usr/share/comm-gnome-theme-everforest/install.sh [--upgrade]
+==> Run the helper as the desktop user (without sudo) because it writes to $HOME.
+==> To remove the tweaks before uninstalling the package run:
+    /usr/share/comm-gnome-theme-everforest/install.sh --uninstall
 EOF
 }
 
@@ -21,7 +23,7 @@ post_upgrade() {
 
 post_remove() {
     cat <<'EOF'
-==> Everforest theme removed.
-==> Revert any manual adjustments done by the helper if desired.
+==> Everforest theme files removed.
+==> If you did not run the helper with --uninstall beforehand, remove ~/.config overrides manually.
 EOF
 }
