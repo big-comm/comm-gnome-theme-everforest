@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# Installation script for Everforest Medium Dark theme
+
+set -e
+
+THEME_NAME="Everforest-Dark-Medium-B"
+WALLPAPER_NAME="bokeh-small-plant.heic"
+WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
+USER_HOME="${HOME}"
+CONFIG_DIR="${USER_HOME}/.config"
+
+# Color definitions
+darkGreen="\e[1;38;5;22m"
+lightGreen="\e[1;38;5;34m"
+cyan="\e[1;38;5;45m"
+white="\e[1;97m"
+reset="\e[0m"
+
+# Print status messages
+printMsg() {
+    local message=$1
+    echo -e "${darkGreen}[${lightGreen}everforest${darkGreen}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
+}
+
+printMsg "Installing Everforest Medium Dark Theme"
+echo ""
+
+# Function to backup existing configurations
+backup_config() {
+    local file="$1"
+    if [ -f "${file}" ]; then
+        printMsg "Backing up $(basename "${file}")..."
+        cp "${file}" "${file}.backup-$(date +%Y%m%d-%H%M%S)"
+    fi
+}
+
+# Apply GTK3 theme
+printMsg "[1/3] Configuring GTK3 theme..."
+GTK3_CONFIG="${CONFIG_DIR}/gtk-3.0/settings.ini"
+mkdir -p "${CONFIG_DIR}/gtk-3.0"
+
+if [ -f "${GTK3_CONFIG}" ]; then
+    backup_config "${GTK3_CONFIG}"
+    # Update or add theme setting
+    if grep -q "gtk-theme-name" "${GTK3_CONFIG}"; then
+        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK3_CONFIG}"
+    else
+        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK3_CONFIG}"
+    fi
+else
+    cat > "${GTK3_CONFIG}" << EOF
+[Settings]
+gtk-theme-name=${THEME_NAME}
+gtk-application-prefer-dark-theme=true
+EOF
+fi
+
+# Apply GTK4 theme
+printMsg "[2/3] Configuring GTK4 theme..."
+GTK4_CONFIG="${CONFIG_DIR}/gtk-4.0/settings.ini"
+mkdir -p "${CONFIG_DIR}/gtk-4.0"
+
+if [ -f "${GTK4_CONFIG}" ]; then
+    backup_config "${GTK4_CONFIG}"
+    # Update or add theme setting
+    if grep -q "gtk-theme-name" "${GTK4_CONFIG}"; then
+        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK4_CONFIG}"
+    else
+        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK4_CONFIG}"
+    fi
+else
+    cat > "${GTK4_CONFIG}" << EOF
+[Settings]
+gtk-theme-name=${THEME_NAME}
+gtk-application-prefer-dark-theme=true
+EOF
+fi
+
+# Link GTK4 assets and CSS files
+printMsg "Linking GTK4 assets..."
+GTK4_ASSETS="${CONFIG_DIR}/gtk-4.0/assets"
+THEME_ASSETS="/usr/share/themes/${THEME_NAME}/gtk-4.0/assets"
+
+if [ -d "${THEME_ASSETS}" ]; then
+    rm -rf "${GTK4_ASSETS}"
+    ln -sf "${THEME_ASSETS}" "${GTK4_ASSETS}"
+fi
+
+# Link GTK4 CSS files
+for css_file in gtk.css gtk-dark.css; do
+    if [ -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" ]; then
+        rm -f "${CONFIG_DIR}/gtk-4.0/${css_file}"
+        ln -sf "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" "${CONFIG_DIR}/gtk-4.0/${css_file}"
+    fi
+done
+
+# Apply wallpaper if it exists
+if [ -f "${WALLPAPER_PATH}" ]; then
+    printMsg "[3/3] Setting wallpaper..."
+    # Convert HEIC to a format that GNOME can use if needed
+    if command -v heif-convert &> /dev/null; then
+        CONVERTED_WALLPAPER="${USER_HOME}/.local/share/backgrounds/everforest-wallpaper.jpg"
+        mkdir -p "${USER_HOME}/.local/share/backgrounds"
+        heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}"
+        gsettings set org.gnome.desktop.background picture-uri "file://${CONVERTED_WALLPAPER}"
+    else
+        # Try to use it directly if HEIC is supported
+        gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPER_PATH}"
+    fi
+else
+    printMsg "[3/3] Wallpaper file not found at ${WALLPAPER_PATH}"
+fi
+
+echo ""
+printMsg "Installation Complete!"
+echo ""
+printMsg "Theme: ${THEME_NAME}"
+echo -e "${white}Note: Icon theme was NOT modified as per your request.${reset}"
+echo ""
+printMsg "You may need to restart your session for all changes to take effect."
+printMsg "To apply immediately, you can run:"
+echo -e "${white}  gsettings set org.gnome.desktop.interface gtk-theme '${THEME_NAME}'${reset}"
+echo ""
