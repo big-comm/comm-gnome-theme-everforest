@@ -1,91 +1,123 @@
 #!/usr/bin/env bash
+# Installation script for Everforest Medium Dark theme
 
-pkgname=comm-gnome-theme-everforest
-_helper="/usr/share/${pkgname}/install.sh"
+set -e
 
-_print_hint() {
-    cat <<'EOF'
-==> Everforest files installed in /usr/share/themes/Everforest-Dark-Medium-B.
-==> Theme changes are now applied automatically for the active desktop user.
-==> To run the helper manually (or for other users) use:
-    /usr/share/comm-gnome-theme-everforest/install.sh [--install|--upgrade|--uninstall]
-EOF
+THEME_NAME="Everforest-Dark-Medium-B"
+WALLPAPER_NAME="bokeh-small-plant.heic"
+WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
+USER_HOME="${HOME}"
+CONFIG_DIR="${USER_HOME}/.config"
+
+# Color definitions
+darkGreen="\e[1;38;5;22m"
+lightGreen="\e[1;38;5;34m"
+cyan="\e[1;38;5;45m"
+white="\e[1;97m"
+reset="\e[0m"
+
+# Print status messages
+printMsg() {
+    local message=$1
+    echo -e "${darkGreen}[${lightGreen}everforest${darkGreen}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
 }
 
-_guess_target_user() {
-    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
-        printf '%s\n' "${SUDO_USER}"
-        return
-    fi
+printMsg "Installing Everforest Medium Dark Theme"
+echo ""
 
-    if command -v logname >/dev/null 2>&1; then
-        local ln
-        if ln=$(logname 2>/dev/null) && [ -n "${ln}" ] && [ "${ln}" != "root" ]; then
-            printf '%s\n' "${ln}"
-            return
-        fi
-    fi
-
-    if command -v loginctl >/dev/null 2>&1; then
-        loginctl list-sessions --no-legend 2>/dev/null | awk '$3 && $3 != "root" {print $3; exit}'
-        return
+# Function to backup existing configurations
+backup_config() {
+    local file="$1"
+    if [ -f "${file}" ]; then
+        printMsg "Backing up $(basename ${file})..."
+        cp "${file}" "${file}.backup-$(date +%Y%m%d-%H%M%S)"
     fi
 }
 
-_run_helper() {
-    local action="$1"
-    [ -x "${_helper}" ] || return
+# Apply GTK3 theme
+printMsg "[1/3] Configuring GTK3 theme..."
+GTK3_CONFIG="${CONFIG_DIR}/gtk-3.0/settings.ini"
+mkdir -p "${CONFIG_DIR}/gtk-3.0"
 
-    local target_user
-    target_user=$(_guess_target_user)
-
-    local action_flag="--${action}"
-
-    if [ -n "${target_user}" ] && id -u "${target_user}" >/dev/null 2>&1; then
-        local uid
-        uid=$(id -u "${target_user}")
-        local runtime="/run/user/${uid}"
-        local env_opts=()
-        local user_home
-        user_home=$(getent passwd "${target_user}" | cut -d: -f6)
-        env_opts+=("HOME=${user_home:-/home/${target_user}}")
-        env_opts+=("USER=${target_user}" "LOGNAME=${target_user}")
-        if [ -d "${runtime}" ]; then
-            env_opts+=("XDG_RUNTIME_DIR=${runtime}")
-            if [ -S "${runtime}/bus" ]; then
-                env_opts+=("DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime}/bus")
-            fi
-        fi
-
-        local switch_cmd=(runuser -u "${target_user}" --)
-        if ! command -v runuser >/dev/null 2>&1; then
-            switch_cmd=(sudo -H -u "${target_user}")
-        fi
-
-        "${switch_cmd[@]}" env "${env_opts[@]}" "${_helper}" "${action_flag}" || \
-            echo "==> Warning: Failed to run helper for ${target_user}. Run ${_helper} ${action_flag} manually."
+if [ -f "${GTK3_CONFIG}" ]; then
+    backup_config "${GTK3_CONFIG}"
+    # Update or add theme setting
+    if grep -q "gtk-theme-name" "${GTK3_CONFIG}"; then
+        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK3_CONFIG}"
     else
-        echo "==> Warning: Could not detect a non-root desktop user. Run ${_helper} ${action_flag} manually if needed."
+        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK3_CONFIG}"
     fi
-}
-
-post_install() {
-    _run_helper install
-    _print_hint
-}
-
-post_upgrade() {
-    _run_helper upgrade
-    _print_hint
-}
-
-pre_remove() {
-    _run_helper uninstall
-}
-
-post_remove() {
-    cat <<'EOF'
-==> Everforest theme files removed.
-==> User configurations restored (if a backup existed). Remove leftover backups in ~/.config if desired.
+else
+    cat > "${GTK3_CONFIG}" << EOF
+[Settings]
+gtk-theme-name=${THEME_NAME}
+gtk-application-prefer-dark-theme=true
 EOF
-}
+fi
+
+# Apply GTK4 theme
+printMsg "[2/3] Configuring GTK4 theme..."
+GTK4_CONFIG="${CONFIG_DIR}/gtk-4.0/settings.ini"
+mkdir -p "${CONFIG_DIR}/gtk-4.0"
+
+if [ -f "${GTK4_CONFIG}" ]; then
+    backup_config "${GTK4_CONFIG}"
+    # Update or add theme setting
+    if grep -q "gtk-theme-name" "${GTK4_CONFIG}"; then
+        sed -i "s/gtk-theme-name=.*/gtk-theme-name=${THEME_NAME}/" "${GTK4_CONFIG}"
+    else
+        echo "gtk-theme-name=${THEME_NAME}" >> "${GTK4_CONFIG}"
+    fi
+else
+    cat > "${GTK4_CONFIG}" << EOF
+[Settings]
+gtk-theme-name=${THEME_NAME}
+gtk-application-prefer-dark-theme=true
+EOF
+fi
+
+# Link GTK4 assets and CSS files
+printMsg "Linking GTK4 assets..."
+GTK4_ASSETS="${CONFIG_DIR}/gtk-4.0/assets"
+THEME_ASSETS="/usr/share/themes/${THEME_NAME}/gtk-4.0/assets"
+
+if [ -d "${THEME_ASSETS}" ]; then
+    rm -rf "${GTK4_ASSETS}"
+    ln -sf "${THEME_ASSETS}" "${GTK4_ASSETS}"
+fi
+
+# Link GTK4 CSS files
+for css_file in gtk.css gtk-dark.css; do
+    if [ -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" ]; then
+        rm -f "${CONFIG_DIR}/gtk-4.0/${css_file}"
+        ln -sf "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" "${CONFIG_DIR}/gtk-4.0/${css_file}"
+    fi
+done
+
+# Apply wallpaper if it exists
+if [ -f "${WALLPAPER_PATH}" ]; then
+    printMsg "[3/3] Setting wallpaper..."
+    # Convert HEIC to a format that GNOME can use if needed
+    if command -v heif-convert &> /dev/null; then
+        CONVERTED_WALLPAPER="${USER_HOME}/.local/share/backgrounds/everforest-wallpaper.jpg"
+        mkdir -p "${USER_HOME}/.local/share/backgrounds"
+        heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}"
+        gsettings set org.gnome.desktop.background picture-uri "file://${CONVERTED_WALLPAPER}"
+    else
+        # Try to use it directly if HEIC is supported
+        gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPER_PATH}"
+    fi
+else
+    printMsg "[3/3] Wallpaper file not found at ${WALLPAPER_PATH}"
+fi
+
+echo ""
+printMsg "Installation Complete!"
+echo ""
+printMsg "Theme: ${THEME_NAME}"
+echo -e "${white}Note: Icon theme was NOT modified as per your request.${reset}"
+echo ""
+printMsg "You may need to restart your session for all changes to take effect."
+printMsg "To apply immediately, you can run:"
+echo -e "${white}  gsettings set org.gnome.desktop.interface gtk-theme '${THEME_NAME}'${reset}"
+echo ""
