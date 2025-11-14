@@ -7,15 +7,19 @@ pkgrel=$(date +%H%M)
 arch=('any')
 license=('MIT')
 url="https://github.com/big-comm/${pkgname}"
-depends=('gtk3' 'gtk4' 'gnome-shell')
+depends=('gtk3' 'gtk4' 'gnome-shell' 'gtk-engine-murrine')
+makedepends=('git' 'sassc')
 optdepends=('gnome-tweaks: For additional customization'
-            'heif: For HEIC wallpaper conversion')
+            'heif: For AVIF wallpaper conversion')
 
 source=(
     "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git"
     "git+${url}.git"
 )
 sha256sums=('SKIP' 'SKIP')
+
+_theme_variant='Everforest-Dark-Medium'
+_theme_target='Everforest-Dark-Medium-B'
 
 # Automatically detect and use the correct install file
 if [ -e "${pkgname}.install" ]; then
@@ -29,45 +33,54 @@ prepare() {
 }
 
 build() {
-    cd "${srcdir}/${pkgname}" || return 1
-    # No build needed, this is a theme package
+    local theme_build="${srcdir}/theme-build"
+
+    rm -rf "${theme_build}"
+    install -d "${theme_build}"
+
+    cd "${srcdir}/Everforest-GTK-Theme/themes" || return 1
+    ./install.sh --dest "${theme_build}" --color dark --tweaks medium
 }
 
 check() {
     cd "${srcdir}/${pkgname}" || return 1
-    # Verify theme directories exist in the cloned repo
-    if [ ! -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium-B" ] && \
-       [ ! -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium" ]; then
+    local theme_build="${srcdir}/theme-build"
+
+    # Verify theme directories exist in the build output
+    if [ ! -d "${theme_build}/${_theme_target}" ] && \
+       [ ! -d "${theme_build}/${_theme_variant}" ]; then
         echo "Warning: Checking available theme directories..."
-        find "${srcdir}/Everforest-GTK-Theme" -maxdepth 1 -type d -name "Everforest*" | head -5
+        find "${theme_build}" -maxdepth 1 -type d -name "Everforest*" | head -5
         return 0  # Don't fail, just warn
     fi
 }
 
 package() {
+    local theme_build="${srcdir}/theme-build"
+
     # Install GTK theme
     install -d "${pkgdir}/usr/share/themes"
     
     # Find the theme directory - try multiple possible names
     local theme_source
-    if [ -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium-B" ]; then
-        theme_source="${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium-B"
-    elif [ -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium" ]; then
-        theme_source="${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium"
+    if [ -d "${theme_build}/${_theme_target}" ]; then
+        theme_source="${theme_build}/${_theme_target}"
+    elif [ -d "${theme_build}/${_theme_variant}" ]; then
+        theme_source="${theme_build}/${_theme_variant}"
     else
         # Find any Everforest-Dark-Medium variant
-        theme_source=$(find "${srcdir}/Everforest-GTK-Theme" -maxdepth 1 -type d -name "Everforest-Dark-Medium*" | sort | tail -1)
+        theme_source=$(find "${theme_build}" -maxdepth 1 -type d -name "Everforest-Dark-Medium*" | sort | tail -1)
     fi
     
     if [ -z "${theme_source}" ] || [ ! -d "${theme_source}" ]; then
-        echo "Available directories in Everforest-GTK-Theme:"
-        ls -la "${srcdir}/Everforest-GTK-Theme/"
+        echo "Available directories in build output:"
+        ls -la "${theme_build}"
         echo "Error: Could not find Everforest theme directory"
         return 1
     fi
     
     echo "Using theme from: ${theme_source}"
-    cp -r "${theme_source}" "${pkgdir}/usr/share/themes/Everforest-Dark-Medium-B"
+    cp -r "${theme_source}" "${pkgdir}/usr/share/themes/${_theme_target}"
 
     # Install installation script
     install -Dm755 "${srcdir}/${pkgname}/install.sh" \
@@ -75,7 +88,7 @@ package() {
 
     # Install wallpapers from usr/share directory
     if [ -d "${srcdir}/${pkgname}/usr/share" ]; then
-        find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" \) | while read -r wallpaper; do
+        find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" -o -iname "*.avif" \) | while read -r wallpaper; do
             install -Dm644 "${wallpaper}" \
                 "${pkgdir}/usr/share/backgrounds/${pkgname}/$(basename "${wallpaper}")"
         done
