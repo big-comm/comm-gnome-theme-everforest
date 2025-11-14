@@ -1,57 +1,57 @@
 # comm-gnome-theme-everforest
 
-Everforest Medium Dark é um tema GNOME inspirado no esquema de cores Everforest, incluindo temas GTK3/GTK4, assets para libadwaita e um wallpaper HEIC exclusivo. Este repositório empacota a versão personalizada usada pela comunidade BigLinux.
+Everforest Medium Dark is a GNOME theme inspired by the Everforest palette, providing GTK3/GTK4 styles, libadwaita assets, and a curated wallpaper. This repository ships the customized build used by the BigLinux community.
 
-## O que está incluído
-- Build automatizado do repositório upstream [Fausto-Korpsvart/Everforest-GTK-Theme](https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme) com tweaks `Dark + Medium`.
-- Wallpaper `bokeh-small-plant.avif` em `/usr/share/backgrounds/comm-gnome-theme-everforest/`.
-- Script auxiliar (`/usr/share/comm-gnome-theme-everforest/install.sh`) para aplicar, atualizar ou remover as personalizações por usuário.
+## What's included
+- Automated build of the upstream [Fausto-Korpsvart/Everforest-GTK-Theme](https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme) using the `Dark + Medium` tweaks.
+- Wallpaper `bokeh-small-plant.avif` installed in `/usr/share/backgrounds/comm-gnome-theme-everforest/`.
+- Helper script (`/usr/share/comm-gnome-theme-everforest/install.sh`) to apply, refresh, or remove user-level tweaks.
 
-## Dependências principais
+## Key dependencies
 - Runtime: `gtk3`, `gtk4`, `gnome-shell`, `gtk-engine-murrine`.
 - Build: `git`, `sassc`.
-- Opcional: `heif` para converter o wallpaper AVIF automaticamente ao aplicá-lo.
+- Optional: `heif` to convert the AVIF wallpaper automatically when applying it.
 
-## Como usar o helper
-Execute o script como o usuário da sessão gráfica (sem `sudo`). Ele afeta apenas os arquivos no `$HOME`.
+## Helper usage
+During `pacman` install/upgrade/remove the helper runs automatically for the active graphical user (detected through `sudo`, `logname`, or `loginctl`). You can still run it manually to reapply changes or affect other accounts.
 
-### Aplicar (instalação inicial)
+### Apply (initial installation)
 ```bash
 /usr/share/comm-gnome-theme-everforest/install.sh
 ```
 
-### Atualizar após upgrade do pacote
+### Refresh after package upgrades
 ```bash
 /usr/share/comm-gnome-theme-everforest/install.sh --upgrade
 ```
 
-### Remover personalizações
+### Remove customizations
 ```bash
 /usr/share/comm-gnome-theme-everforest/install.sh --uninstall
 ```
 
-O helper cria backups de `~/.config/gtk-3.0/settings.ini` e `~/.config/gtk-4.0/settings.ini` antes de alterar qualquer coisa e restaura a última cópia durante a remoção.
+The helper backs up `~/.config/gtk-3.0/settings.ini` and `~/.config/gtk-4.0/settings.ini` before making changes and restores the latest backup during removal when available. If no graphical session is detected during `pacman -S/-R`, you will only see a warning and can execute the commands above manually.
 
-### Opções disponíveis
+### Available options
 ```
---install, --apply   Aplica o tema (padrão)
---upgrade            Reaplica o tema após atualização do pacote
+--install, --apply   Apply the theme (default)
+--upgrade            Reapply the theme after a package update
 --uninstall, --remove
-                     Remove configurações e restaura backups
---help               Mostra a ajuda
+                     Remove settings and restore backups
+--help               Show usage information
 ```
 
-## Processo de build
-O `PKGBUILD` baixa duas fontes:
-1. `Everforest-GTK-Theme`: usado para compilar o tema com `themes/install.sh --dest "$srcdir/theme-build" --color dark --tweaks medium`.
-2. Este repositório (`comm-gnome-theme-everforest`): contém o helper, wallpaper e documentação.
+## Build process
+The `PKGBUILD` pulls two sources:
+1. `Everforest-GTK-Theme`: compiled via `themes/install.sh --dest "$srcdir/theme-build" --color dark --tweaks medium`.
+2. This repository (`comm-gnome-theme-everforest`): provides the helper, wallpaper, and documentation.
 
-Durante `package()` são instalados:
-- `/usr/share/themes/Everforest-Dark-Medium-B` com os arquivos gerados.
-- `/usr/share/comm-gnome-theme-everforest/install.sh` (755).
-- Documentação e licença em `/usr/share/doc` e `/usr/share/licenses`.
-- Wallpapers em `/usr/share/backgrounds/comm-gnome-theme-everforest/`.
+During `package()` the following are installed:
+- `/usr/share/themes/Everforest-Dark-Medium-B` (generated theme files).
+- `/usr/share/comm-gnome-theme-everforest/install.sh` (mode 755).
+- Documentation and license under `/usr/share/doc` and `/usr/share/licenses`.
+- Wallpapers under `/usr/share/backgrounds/comm-gnome-theme-everforest/`.
 
-## Créditos
-- Tema original: [Fausto-Korpsvart](https://github.com/Fausto-Korpsvart).
-- Empacotamento BigLinux Community.
+## Credits
+- Original theme: [Fausto-Korpsvart](https://github.com/Fausto-Korpsvart).
+- Packaging: BigLinux Community.
