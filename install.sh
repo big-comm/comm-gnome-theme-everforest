@@ -7,8 +7,18 @@ THEME_NAME="Everforest-Dark-Medium-B"
 WALLPAPER_NAME="bokeh-small-plant.avif"
 WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
 CONFIG_DIR="${HOME}/.config"
+STATE_DIR="${CONFIG_DIR}/comm-gnome-theme-everforest"
+STATE_USER_THEME_FILE="${STATE_DIR}/prev-user-theme"
+STATE_GTK_THEME_FILE="${STATE_DIR}/prev-gtk-theme"
+STATE_COLOR_FILE="${STATE_DIR}/prev-color-scheme"
+STATE_WALL_FILE="${STATE_DIR}/prev-wallpaper"
+STATE_WALL_DARK_FILE="${STATE_DIR}/prev-wallpaper-dark"
+STATE_LOG_FILE="${STATE_DIR}/gsettings-backups.log"
 CONVERTED_WALLPAPER="${HOME}/.local/share/backgrounds/everforest-wallpaper.jpg"
 ACTION="install"
+_backup_suffix="$(date +%Y%m%d-%H%M%S)"
+
+mkdir -p "${STATE_DIR}" 2>/dev/null || true
 
 # Color definitions for logs
 darkGreen="\e[1;38;5;22m"
@@ -37,9 +47,15 @@ EOF
 
 backup_config() {
     local file="$1"
-    if [ -f "${file}" ]; then
+    if [ ! -f "${file}" ]; then
+        return
+    fi
+
+    local dest="${file}.backup-${_backup_suffix}"
+    if cp "${file}" "${dest}"; then
         printMsg "Backing up $(basename "${file}")..."
-        cp "${file}" "${file}.backup-$(date +%Y%m%d-%H%M%S)"
+    else
+        printMsg "Warning: Failed to backup $(basename "${file}") (permission denied?)."
     fi
 }
 
@@ -51,16 +67,67 @@ restore_backup() {
 
     if [ "${#backups[@]}" -gt 0 ]; then
         local latest="${backups[-1]}"
-        cp "${latest}" "${file}"
-        printMsg "Restored $(basename "${file}") from $(basename "${latest}")"
+        if cp "${latest}" "${file}"; then
+            printMsg "Restored $(basename "${file}") from $(basename "${latest}")"
+        else
+            printMsg "Warning: Failed to restore $(basename "${file}") from $(basename "${latest}")"
+        fi
     else
-        rm -f "${file}"
-        printMsg "Removed $(basename "${file}") (no backup found)"
+        if rm -f "${file}"; then
+            printMsg "Removed $(basename "${file}") (no backup found)"
+        fi
     fi
 }
 
 has_backup() {
     compgen -G "${1}.backup-*" > /dev/null 2>&1
+}
+
+save_gsettings_value() {
+    local schema="$1" key="$2" file="$3"
+    [ -n "${file}" ] || return
+    if command -v gsettings &>/dev/null; then
+        if [ ! -s "${file}" ]; then
+            local value
+            if value=$(gsettings get "${schema}" "${key}" 2>/dev/null); then
+                printf '%s\n' "${value}" > "${file}"
+                printf '%s %s %s\n' "${schema}" "${key}" "${value}" >> "${STATE_LOG_FILE}"
+            fi
+        fi
+    fi
+}
+
+restore_gsettings_value() {
+    local schema="$1" key="$2" file="$3"
+    if command -v gsettings &>/dev/null && [ -s "${file}" ]; then
+        local value
+        value=$(cat "${file}")
+        if gsettings set "${schema}" "${key}" "${value}"; then
+            printMsg "Restored ${schema} ${key} to ${value}"
+        else
+            printMsg "Warning: Failed to restore ${schema} ${key}."
+        fi
+        rm -f "${file}"
+    fi
+}
+
+set_gsettings_with_backup() {
+    local schema="$1" key="$2" target_value="$3" backup_file="$4" description="$5"
+    if ! command -v gsettings &>/dev/null; then
+        printMsg "gsettings unavailable; skipping ${schema} ${key}."
+        return 1
+    fi
+
+    save_gsettings_value "${schema}" "${key}" "${backup_file}"
+    if gsettings set "${schema}" "${key}" "${target_value}"; then
+        if [ -n "${description}" ]; then
+            printMsg "${description}"
+        fi
+        return 0
+    else
+        printMsg "Warning: Failed to set ${schema} ${key}."
+        return 1
+    fi
 }
 
 link_gtk4_assets() {
@@ -97,17 +164,24 @@ apply_wallpaper() {
     fi
 
     printMsg "[3/3] Setting wallpaper..."
+    local target_path="${WALLPAPER_PATH}"
     if command -v heif-convert &>/dev/null; then
         mkdir -p "$(dirname "${CONVERTED_WALLPAPER}")"
-        heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}" >/dev/null
-        if command -v gsettings &>/dev/null; then
-            gsettings set org.gnome.desktop.background picture-uri "file://${CONVERTED_WALLPAPER}" || true
-        fi
-    else
-        if command -v gsettings &>/dev/null; then
-            gsettings set org.gnome.desktop.background picture-uri "file://${WALLPAPER_PATH}" || true
+        if heif-convert "${WALLPAPER_PATH}" "${CONVERTED_WALLPAPER}" >/dev/null; then
+            target_path="${CONVERTED_WALLPAPER}"
+        else
+            printMsg "Warning: heif-convert failed; wallpaper not converted."
         fi
     fi
+
+    local uri="'file://${target_path}'"
+    set_gsettings_with_backup \
+        org.gnome.desktop.background picture-uri "${uri}" "${STATE_WALL_FILE}" \
+        "Wallpaper set for light mode." || printMsg "Wallpaper file installed manually."
+
+    set_gsettings_with_backup \
+        org.gnome.desktop.background picture-uri-dark "${uri}" "${STATE_WALL_DARK_FILE}" \
+        "Wallpaper set for dark mode." || true
 }
 
 remove_wallpaper() {
@@ -115,9 +189,28 @@ remove_wallpaper() {
         rm -f "${CONVERTED_WALLPAPER}"
         printMsg "Removed converted wallpaper copy"
     fi
-    if command -v gsettings &>/dev/null; then
-        gsettings reset org.gnome.desktop.background picture-uri || true
+    restore_gsettings_value org.gnome.desktop.background picture-uri "${STATE_WALL_FILE}"
+    restore_gsettings_value org.gnome.desktop.background picture-uri-dark "${STATE_WALL_DARK_FILE}"
+}
+
+apply_gsettings_theme() {
+    if ! command -v gsettings &>/dev/null; then
+        printMsg "gsettings not available; skipping GNOME interface update."
+        return
     fi
+
+    local theme_value="'${THEME_NAME}'"
+    set_gsettings_with_backup \
+        org.gnome.shell.extensions.user-theme name "${theme_value}" "${STATE_USER_THEME_FILE}" \
+        "Shell user-theme set to ${THEME_NAME}." || true
+
+    set_gsettings_with_backup \
+        org.gnome.desktop.interface gtk-theme "${theme_value}" "${STATE_GTK_THEME_FILE}" \
+        "GNOME interface theme set to ${THEME_NAME}."
+
+    set_gsettings_with_backup \
+        org.gnome.desktop.interface color-scheme "'prefer-dark'" "${STATE_COLOR_FILE}" \
+        "Color scheme set to prefer-dark."
 }
 
 apply_theme() {
@@ -165,6 +258,7 @@ EOF
 
     link_gtk4_assets
     apply_wallpaper
+    apply_gsettings_theme
 
     echo ""
     printMsg "Installation complete!"
@@ -189,6 +283,9 @@ remove_theme() {
 
     unlink_gtk4_assets
     remove_wallpaper
+    restore_gsettings_value org.gnome.desktop.interface gtk-theme "${STATE_GTK_THEME_FILE}"
+    restore_gsettings_value org.gnome.desktop.interface color-scheme "${STATE_COLOR_FILE}"
+    restore_gsettings_value org.gnome.shell.extensions.user-theme name "${STATE_USER_THEME_FILE}"
 
     printMsg "Theme settings removed. Re-run with --install to apply again."
 }
