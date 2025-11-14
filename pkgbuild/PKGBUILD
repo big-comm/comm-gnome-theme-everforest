@@ -12,7 +12,7 @@ optdepends=('gnome-tweaks: For additional customization')
 
 # Source directly from the Everforest GTK theme repository
 source=(
-    "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git#branch=main"
+    "https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme/archive/refs/heads/master.tar.gz"
     "git+${url}.git"
 )
 sha256sums=('SKIP' 'SKIP')
