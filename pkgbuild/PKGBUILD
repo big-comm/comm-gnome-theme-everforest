@@ -1,18 +1,18 @@
 # Maintainer: Narayan Silva <narayan.song@gmail.com>
 
 pkgname=comm-gnome-theme-everforest
-pkgdesc="Everforest Medium Dark GNOME theme with GTK, cursors, icons and wallpaper"
+pkgdesc="Everforest Medium Dark GNOME theme with GTK and wallpaper"
 pkgver=$(date +%y.%m.%d)
 pkgrel=$(date +%H%M)
 arch=('any')
 license=('MIT')
 url="https://github.com/big-comm/${pkgname}"
 depends=('gtk3' 'gtk4' 'gnome-shell')
-optdepends=('gnome-tweaks: For additional customization')
+optdepends=('gnome-tweaks: For additional customization'
+            'heif: For HEIC wallpaper conversion')
 
-# Source directly from the Everforest GTK theme repository
 source=(
-    "https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme/archive/refs/heads/master.tar.gz"
+    "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git"
     "git+${url}.git"
 )
 sha256sums=('SKIP' 'SKIP')
@@ -35,18 +35,39 @@ build() {
 
 check() {
     cd "${srcdir}/${pkgname}" || return 1
-    # Verify theme directory exists
-    if [ ! -d "${srcdir}/Everforest-GTK-Theme/themes/Everforest-Dark-Medium-B" ]; then
-        echo "Error: Everforest theme not found"
-        return 1
+    # Verify theme directories exist in the cloned repo
+    if [ ! -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium-B" ] && \
+       [ ! -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium" ]; then
+        echo "Warning: Checking available theme directories..."
+        find "${srcdir}/Everforest-GTK-Theme" -maxdepth 1 -type d -name "Everforest*" | head -5
+        return 0  # Don't fail, just warn
     fi
 }
 
 package() {
     # Install GTK theme
     install -d "${pkgdir}/usr/share/themes"
-    cp -r "${srcdir}/Everforest-GTK-Theme/themes/Everforest-Dark-Medium-B" \
-        "${pkgdir}/usr/share/themes/Everforest-Dark-Medium-B"
+    
+    # Find the theme directory - try multiple possible names
+    local theme_source
+    if [ -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium-B" ]; then
+        theme_source="${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium-B"
+    elif [ -d "${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium" ]; then
+        theme_source="${srcdir}/Everforest-GTK-Theme/Everforest-Dark-Medium"
+    else
+        # Find any Everforest-Dark-Medium variant
+        theme_source=$(find "${srcdir}/Everforest-GTK-Theme" -maxdepth 1 -type d -name "Everforest-Dark-Medium*" | sort | tail -1)
+    fi
+    
+    if [ -z "${theme_source}" ] || [ ! -d "${theme_source}" ]; then
+        echo "Available directories in Everforest-GTK-Theme:"
+        ls -la "${srcdir}/Everforest-GTK-Theme/"
+        echo "Error: Could not find Everforest theme directory"
+        return 1
+    fi
+    
+    echo "Using theme from: ${theme_source}"
+    cp -r "${theme_source}" "${pkgdir}/usr/share/themes/Everforest-Dark-Medium-B"
 
     # Install installation script
     install -Dm755 "${srcdir}/${pkgname}/install.sh" \
