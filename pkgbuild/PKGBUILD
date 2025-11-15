@@ -101,4 +101,14 @@ package() {
     # Install license
     install -Dm644 "${srcdir}/${pkgname}/LICENSE" \
         "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+    # Após instalar o tema, CORRIGIR o index.theme
+    local theme_index="${pkgdir}/usr/share/themes/${_theme_target}/index.theme"
+    
+    if [ -f "${theme_index}" ]; then
+        # Substituir os valores de GtkTheme e MetacityTheme pelo nome correto
+        sed -i "s/^GtkTheme=.*/GtkTheme=${_theme_target}/" "${theme_index}"
+        sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
+    fi
+    
 }
