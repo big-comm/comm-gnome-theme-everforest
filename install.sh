@@ -266,6 +266,17 @@ EOF
     printMsg "Theme: ${THEME_NAME}"
     echo -e "${white}Use gsettings or GNOME Tweaks if you need to reapply manually.${reset}"
     echo ""
+
+    # Configurar color-scheme para dark
+    if gsettings writable org.gnome.desktop.interface color-scheme >/dev/null 2>&1; then
+        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+        printMsg "${lightGreen}Color scheme set to prefer-dark${reset}"
+    fi
+    
+    # Reiniciar portais para aplicar mudanças
+    killall xdg-desktop-portal-gtk 2>/dev/null || true
+    killall xdg-desktop-portal-gnome 2>/dev/null || true
+
 }
 
 remove_theme() {
