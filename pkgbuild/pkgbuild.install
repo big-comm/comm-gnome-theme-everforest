@@ -1,82 +1,92 @@
 #!/usr/bin/env bash
-# This file contains scripts that are executed at different stages of package installation/upgrade/removal
 
-# Color definitions for status messages
-blueDark="\e[1;38;5;33m"     # Bold dark blue
-mediumBlue="\e[1;38;5;32m"   # Bold medium blue
-lightBlue="\e[1;38;5;39m"    # Bold light blue
-cyan="\e[1;38;5;45m"         # Bold cyan
-white="\e[1;97m"             # Bold white
-reset="\e[0m"                # Reset text formatting
+pkgname=comm-gnome-theme-everforest
+_helper="/usr/share/${pkgname}/install.sh"
 
-# Print status messages - CHANGE 'PACKAGE_NAME' to your actual package name
-printMsg() {
-    local message=$1
-    echo -e "${blueDark}[${lightBlue}PACKAGE_NAME${blueDark}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
+_print_hint() {
+    cat <<'EOF'
+==> Everforest theme files are in /usr/share/themes/Everforest-Dark-Medium-B.
+==> The helper was invoked automatically for the detected desktop user.
+==> Re-run it manually for other users or if the session was not detected:
+    /usr/share/comm-gnome-theme-everforest/install.sh [--install|--upgrade|--uninstall]
+EOF
 }
 
-# Function executed before package installation
-# pre_install() {
-#     printMsg "Preparing to install the package..."
-#     # Example: Check for system dependencies
-#     # if ! command -v required_command &> /dev/null; then
-#     #     printMsg "Error: required_command not found. Please install it before continuing."
-#     #     exit 1
-#     # fi
-# }
+_guess_target_user() {
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        printf '%s\n' "${SUDO_USER}"
+        return
+    fi
 
-# Function executed after package installation
-# post_install() {
-#     printMsg "Configuring the package after installation..."
-#     # Example: Create a configuration directory
-#     # mkdir -p /etc/mypackage
-#     # chmod 755 /etc/mypackage
-#     # printMsg "Created configuration directory"
-#
-#     # Example: Start a service
-#     # systemctl enable myservice.service
-#     # systemctl start myservice.service
-#     # printMsg "Service enabled and started"
-# }
+    if command -v logname >/dev/null 2>&1; then
+        local ln
+        if ln=$(logname 2>/dev/null) && [ -n "${ln}" ] && [ "${ln}" != "root" ]; then
+            printf '%s\n' "${ln}"
+            return
+        fi
+    fi
 
-# Function executed before package upgrade
-# pre_upgrade() {
-#     printMsg "Preparing to upgrade the package..."
-#     # Example: Backup configuration files
-#     # cp /etc/mypackage/config.conf /etc/mypackage/config.conf.bak
-#     # printMsg "Configuration backup created"
-# }
+    if command -v loginctl >/dev/null 2>&1; then
+        loginctl list-sessions --no-legend 2>/dev/null | awk '$3 && $3 != "root" {print $3; exit}'
+        return
+    fi
+}
 
-# Function executed after package upgrade
-# post_upgrade() {
-#     printMsg "Finalizing package upgrade..."
-#     # Usually, post_install is called here to ensure
-#     # all post-installation configurations are applied
-#     # post_install
-#
-#     # Example: Check and update configuration files
-#     # if [ -f /etc/mypackage/config.conf.pacnew ]; then
-#     #     printMsg "New configuration file available. Please review /etc/mypackage/config.conf.pacnew"
-#     # fi
-#     # printMsg "Upgrade completed successfully"
-# }
+_run_helper() {
+    local action="$1"
+    [ -x "${_helper}" ] || return
 
-# Function executed before package removal
-# pre_remove() {
-#     printMsg "Preparing to remove the package..."
-#     # Example: Stop services
-#     # systemctl stop myservice.service
-#     # systemctl disable myservice.service
-#     # printMsg "Services stopped"
-# }
+    local user
+    user=$(_guess_target_user)
+    local action_flag="--${action}"
 
-# Function executed after package removal
-# post_remove() {
-#     printMsg "Cleaning up after package removal..."
-#     # Example: Remove data directories created by the package
-#     # rm -rf /var/lib/mypackage
-#     # printMsg "Package directories removed"
-#
-#     # printMsg "If you want to remove all user data, run:"
-#     # printMsg "rm -rf /home/*/mypackage_data"
-# }
+    if [ -n "${user}" ] && id -u "${user}" >/dev/null 2>&1; then
+        local uid
+        uid=$(id -u "${user}")
+        local runtime="/run/user/${uid}"
+        local env_vars=()
+        local home_dir
+        home_dir=$(getent passwd "${user}" | cut -d: -f6)
+        env_vars+=("HOME=${home_dir:-/home/${user}}")
+        env_vars+=("USER=${user}" "LOGNAME=${user}")
+        if [ -d "${runtime}" ]; then
+            env_vars+=("XDG_RUNTIME_DIR=${runtime}")
+            if [ -S "${runtime}/bus" ]; then
+                env_vars+=("DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime}/bus")
+            fi
+        fi
+
+        local switch_cmd
+        if command -v runuser >/dev/null 2>&1; then
+            switch_cmd=(runuser -u "${user}" --)
+        else
+            switch_cmd=(sudo -H -u "${user}")
+        fi
+
+        "${switch_cmd[@]}" env "${env_vars[@]}" "${_helper}" "${action_flag}" || \
+            echo "==> Warning: Failed to run helper for ${user}. Run ${_helper} ${action_flag} manually."
+    else
+        echo "==> Warning: Could not detect a non-root desktop user. Run ${_helper} ${action_flag} manually if needed."
+    fi
+}
+
+post_install() {
+    _run_helper install
+    _print_hint
+}
+
+post_upgrade() {
+    _run_helper upgrade
+    _print_hint
+}
+
+pre_remove() {
+    _run_helper uninstall
+}
+
+post_remove() {
+    cat <<'EOF'
+==> Everforest theme files removed.
+==> If you skipped the helper, remove ~/.config overrides manually.
+EOF
+}

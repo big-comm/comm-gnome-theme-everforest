@@ -1,21 +1,25 @@
-# Maintainer: Tales A. Mendonça <talesam@gmail.com>
+# Maintainer: Narayan Silva <narayan.song@gmail.com>
 
-pkgname=pkgbuild-template
-pkgdesc="Package template for Communitybig"
-# Uncomment and edit the following lines as needed
-#depends=('')
-#makedepends=('')
-#optdepends=('')
-#conflicts=('')
-#provides=('')
-#replaces=('')
+pkgname=comm-gnome-theme-everforest
+pkgdesc="Everforest Medium Dark GNOME theme with GTK and wallpaper"
 pkgver=$(date +%y.%m.%d)
 pkgrel=$(date +%H%M)
 arch=('any')
 license=('MIT')
 url="https://github.com/big-comm/${pkgname}"
-source=("git+${url}.git")
-md5sums=('SKIP')
+depends=('gtk3' 'gtk4' 'gnome-shell' 'gtk-engine-murrine')
+makedepends=('git' 'sassc')
+optdepends=('gnome-tweaks: For additional customization'
+            'heif: For AVIF wallpaper conversion')
+
+source=(
+    "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git"
+    "git+${url}.git"
+)
+sha256sums=('SKIP' 'SKIP')
+
+_theme_variant='Everforest-Dark-Medium'
+_theme_target='Everforest-Dark-Medium-B'
 
 # Automatically detect and use the correct install file
 if [ -e "${pkgname}.install" ]; then
@@ -25,48 +29,86 @@ elif [ -e "pkgbuild.install" ]; then
 fi
 
 prepare() {
-    cd "${srcdir}/${pkgname}"
-    # Add any preparation steps here, if needed
-    # For example: patch -p1 < "${srcdir}/patch-file.patch"
+    cd "${srcdir}/${pkgname}" || return 1
 }
 
 build() {
-    cd "${srcdir}/${pkgname}"
-    # Add build steps here, if needed
-    # For example: make
+    local theme_build="${srcdir}/theme-build"
+
+    rm -rf "${theme_build}"
+    install -d "${theme_build}"
+
+    cd "${srcdir}/Everforest-GTK-Theme/themes" || return 1
+    ./install.sh --dest "${theme_build}" --color dark --tweaks medium
 }
 
 check() {
-    cd "${srcdir}/${pkgname}"
-    # Add check/test steps here, if needed
-    # For example: make check
+    cd "${srcdir}/${pkgname}" || return 1
+    local theme_build="${srcdir}/theme-build"
+
+    # Verify theme directories exist in the build output
+    if [ ! -d "${theme_build}/${_theme_target}" ] && \
+       [ ! -d "${theme_build}/${_theme_variant}" ]; then
+        echo "Warning: Checking available theme directories..."
+        find "${theme_build}" -maxdepth 1 -type d -name "Everforest*" | head -5
+        return 0  # Don't fail, just warn
+    fi
 }
 
 package() {
-    cd "${srcdir}/${pkgname}"
+    local theme_build="${srcdir}/theme-build"
 
-    # Determine the correct source directory
-    if [ -d "${pkgname}" ]; then
-        srcdir="${srcdir}/${pkgname}/${pkgname}"
+    # Install GTK theme
+    install -d "${pkgdir}/usr/share/themes"
+    
+    # Find the theme directory - try multiple possible names
+    local theme_source
+    if [ -d "${theme_build}/${_theme_target}" ]; then
+        theme_source="${theme_build}/${_theme_target}"
+    elif [ -d "${theme_build}/${_theme_variant}" ]; then
+        theme_source="${theme_build}/${_theme_variant}"
     else
-        srcdir="${srcdir}/${pkgname}"
+        # Find any Everforest-Dark-Medium variant
+        theme_source=$(find "${theme_build}" -maxdepth 1 -type d -name "Everforest-Dark-Medium*" | sort | tail -1)
+    fi
+    
+    if [ -z "${theme_source}" ] || [ ! -d "${theme_source}" ]; then
+        echo "Available directories in build output:"
+        ls -la "${theme_build}"
+        echo "Error: Could not find Everforest theme directory"
+        return 1
+    fi
+    
+    echo "Using theme from: ${theme_source}"
+    cp -r "${theme_source}" "${pkgdir}/usr/share/themes/${_theme_target}"
+
+    # Install installation script
+    install -Dm755 "${srcdir}/${pkgname}/install.sh" \
+        "${pkgdir}/usr/share/${pkgname}/install.sh"
+
+    # Install wallpapers from usr/share directory
+    if [ -d "${srcdir}/${pkgname}/usr/share" ]; then
+        find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" -o -iname "*.avif" \) | while read -r wallpaper; do
+            install -Dm644 "${wallpaper}" \
+                "${pkgdir}/usr/share/backgrounds/${pkgname}/$(basename "${wallpaper}")"
+        done
     fi
 
-    # Install files
-    local dirs=("usr" "etc" "opt")
-    for dir in "${dirs[@]}"; do
-        if [ -d "${srcdir}/${dir}" ]; then
-            cp -a "${srcdir}/${dir}" "${pkgdir}/"
-        fi
-    done
+    # Install documentation
+    install -Dm644 "${srcdir}/${pkgname}/README.md" \
+        "${pkgdir}/usr/share/doc/${pkgname}/README.md"
 
-    # Install license file if present
-    if [ -f "LICENSE" ]; then
-        install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
-    fi
+    # Install license
+    install -Dm644 "${srcdir}/${pkgname}/LICENSE" \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
-    # Install documentation if present
-    if [ -f "README.md" ]; then
-        install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+    # Após instalar o tema, CORRIGIR o index.theme
+    local theme_index="${pkgdir}/usr/share/themes/${_theme_target}/index.theme"
+    
+    if [ -f "${theme_index}" ]; then
+        # Substituir os valores de GtkTheme e MetacityTheme pelo nome correto
+        sed -i "s/^GtkTheme=.*/GtkTheme=${_theme_target}/" "${theme_index}"
+        sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
     fi
+    
 }
