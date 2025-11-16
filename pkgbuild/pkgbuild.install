@@ -1,150 +1,208 @@
 #!/usr/bin/env bash
+# pkgbuild.install - Installation script para comm-gnome-theme-everforest
+# Baseado no padrão do Dracula mas adaptado para Everforest
 
-pkgname=comm-gnome-theme-everforest
-_helper="/usr/share/${pkgname}/install.sh"
+# Color definitions for status messages
+blueDark="\e[1;38;5;33m"     # Bold dark blue
+mediumBlue="\e[1;38;5;32m"   # Bold medium blue
+lightBlue="\e[1;38;5;39m"    # Bold light blue
+cyan="\e[1;38;5;45m"         # Bold cyan
+white="\e[1;97m"             # Bold white
+reset="\e[0m"                # Reset text formatting
 
-_print_hint() {
-    cat <<'EOF'
-==> Everforest theme files are in /usr/share/themes/Everforest-Dark-Medium-B.
-==> The helper was invoked automatically for the detected desktop user.
-==> Re-run it manually for other users or if the session was not detected:
-    /usr/share/comm-gnome-theme-everforest/install.sh [--install|--upgrade|--uninstall]
-EOF
+# Print status messages
+printMsg() {
+    local message=$1
+    echo -e "${blueDark}[${lightBlue}comm-gnome-theme-everforest${blueDark}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
 }
 
-_guess_target_user() {
-    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
-        printf '%s\n' "${SUDO_USER}"
+# Function executed before package installation
+pre_install() {
+    printMsg "Preparing to install Everforest theme for GNOME..."
+}
+
+# Function executed after package installation
+post_install() {
+    printMsg "Applying Everforest theme for GNOME and configuring GTK..."
+
+    # Robust user detection
+    local user
+    user=$(logname 2>/dev/null)
+    if [ -z "$user" ]; then
+        user=$(id -un 2>/dev/null)
+    fi
+    if [ -z "$user" ] || [ "$user" = "root" ]; then
+        printMsg "Could not determine current user. Skipping theme application."
         return
     fi
 
-    if command -v logname >/dev/null 2>&1; then
-        local ln
-        if ln=$(logname 2>/dev/null) && [ -n "${ln}" ] && [ "${ln}" != "root" ]; then
-            printf '%s\n' "${ln}"
-            return
+    local user_home
+    user_home=$(getent passwd "$user" | cut -d: -f6)
+    
+    if [ -z "$user_home" ]; then
+        printMsg "Could not determine home directory for user $user. Skipping."
+        return
+    fi
+
+    # Define theme paths
+    local THEMES_DIR="/usr/share/themes"
+    local THEME_TARGET="Everforest-Dark-Medium-B"
+    local GTK4_DIR="$user_home/.config/gtk-4.0"
+    local GTK3_DIR="$user_home/.config/gtk-3.0"
+
+    printMsg "Using theme: $THEME_TARGET"
+    printMsg "User: $user (home: $user_home)"
+
+    # Backup and create GTK directories
+    for dir in "$GTK4_DIR" "$GTK3_DIR"; do
+        if [ -d "$dir" ]; then
+            mkdir -p "$user_home/backup_customizations"
+            printMsg "Backing up existing $(basename "$dir")..."
+            tar -czf "$user_home/backup_customizations/$(basename "$dir")-$(date +%Y%m%d%H%M%S).tar.gz" \
+                -C "$(dirname "$dir")" "$(basename "$dir")" 2>/dev/null || true
+        else
+            mkdir -p "$dir"
         fi
+        chown -R "$user:$user" "$dir"
+    done
+
+    # Copy GTK4 theme files
+    if [ -d "$THEMES_DIR/$THEME_TARGET/gtk-4.0" ]; then
+        printMsg "Copying GTK 4.0 theme files..."
+        cp -rf "$THEMES_DIR/$THEME_TARGET/gtk-4.0/"* "$GTK4_DIR/" 2>/dev/null || {
+            printMsg "Warning: Failed to copy GTK4 files"
+        }
+    else
+        printMsg "Warning: GTK 4.0 directory not found at $THEMES_DIR/$THEME_TARGET/gtk-4.0"
     fi
 
-    if command -v loginctl >/dev/null 2>&1; then
-        loginctl list-sessions --no-legend 2>/dev/null | awk '$3 && $3 != "root" {print $3; exit}'
-        return
+    # Copy GTK3 theme files
+    if [ -d "$THEMES_DIR/$THEME_TARGET/gtk-3.0" ]; then
+        printMsg "Copying GTK 3.0 theme files..."
+        cp -rf "$THEMES_DIR/$THEME_TARGET/gtk-3.0/"* "$GTK3_DIR/" 2>/dev/null || {
+            printMsg "Warning: Failed to copy GTK3 files"
+        }
+
+        # Copy assets if they exist
+        if [ -d "$THEMES_DIR/$THEME_TARGET/gtk-3.0/assets" ]; then
+            printMsg "Copying GTK 3.0 assets..."
+            cp -rf "$THEMES_DIR/$THEME_TARGET/gtk-3.0/assets/"* "$GTK3_DIR/" 2>/dev/null || true
+        fi
+    else
+        printMsg "Warning: GTK 3.0 directory not found at $THEMES_DIR/$THEME_TARGET/gtk-3.0"
     fi
+
+    # Set correct ownership
+    chown -R "$user:$user" "$GTK4_DIR"
+    chown -R "$user:$user" "$GTK3_DIR"
+    chown -R "$user:$user" "$user_home/backup_customizations" 2>/dev/null || true
+
+    printMsg "GTK CSS files copied successfully"
+
+    # Apply GNOME settings using proper su - context
+    printMsg "Applying GNOME settings for user $user..."
+
+    # Find DISPLAY and XDG_RUNTIME_DIR
+    local uid
+    uid=$(id -u "$user")
+    local runtime_dir="/run/user/$uid"
+
+    su - "$user" -c "
+        export DISPLAY=:0
+        export DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus
+        
+        # Set GTK theme via gsettings
+        gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET' 2>/dev/null || true
+        
+        # Set color scheme to dark
+        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
+        
+        # Verify settings
+        echo 'GTK Theme:' \$(gsettings get org.gnome.desktop.interface gtk-theme)
+        echo 'Color Scheme:' \$(gsettings get org.gnome.desktop.interface color-scheme)
+    " 2>/dev/null || {
+        printMsg "Warning: gsettings apply failed. Try manually with:"
+        printMsg "  gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET'"
+        printMsg "  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'"
+    }
+
+    # Clear GTK cache to force reload
+    printMsg "Clearing GTK cache..."
+    rm -rf "$user_home/.cache/gtk-4.0" 2>/dev/null || true
+    rm -rf "$user_home/.cache/gtk-3.0" 2>/dev/null || true
+
+    printMsg "Everforest theme applied successfully!"
+    printMsg "You may need to restart GNOME Shell or reboot for full effect."
 }
 
-_run_helper() {
-    local action="$1"
-    [ -x "${_helper}" ] || return
+# Function executed before package removal
+pre_remove() {
+    printMsg "Preparing to remove Everforest theme..."
+}
+
+# Function executed after package removal
+post_remove() {
+    printMsg "Removing Everforest theme and restoring backups if available..."
 
     local user
-    user=$(_guess_target_user)
-    local action_flag="--${action}"
-
-    if [ -n "${user}" ] && id -u "${user}" >/dev/null 2>&1; then
-        local uid
-        uid=$(id -u "${user}")
-        local runtime="/run/user/${uid}"
-        local env_vars=()
-        local home_dir
-        home_dir=$(getent passwd "${user}" | cut -d: -f6)
-        env_vars+=("HOME=${home_dir:-/home/${user}}")
-        env_vars+=("USER=${user}" "LOGNAME=${user}")
-        if [ -d "${runtime}" ]; then
-            env_vars+=("XDG_RUNTIME_DIR=${runtime}")
-            if [ -S "${runtime}/bus" ]; then
-                env_vars+=("DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime}/bus")
-            fi
-        fi
-
-        local switch_cmd
-        if command -v runuser >/dev/null 2>&1; then
-            switch_cmd=(runuser -u "${user}" --)
-        else
-            switch_cmd=(sudo -H -u "${user}")
-        fi
-
-        "${switch_cmd[@]}" env "${env_vars[@]}" "${_helper}" "${action_flag}" || \
-            echo "==> Warning: Failed to run helper for ${user}. Run ${_helper} ${action_flag} manually."
-    else
-        echo "==> Warning: Could not detect a non-root desktop user. Run ${_helper} ${action_flag} manually if needed."
-    fi
-}
-
-post_install() {
-    _print_hint
-    _run_helper "install"
-
-    # ============ Copiar CSS para ~/.config ============
-
-    user=$(logname 2>/dev/null || echo "")
+    user=$(logname 2>/dev/null)
     if [ -z "$user" ]; then
-        user=$(id -un 2>/dev/null || echo "")
+        user=$(id -un 2>/dev/null)
+    fi
+    if [ -z "$user" ] || [ "$user" = "root" ]; then
+        printMsg "Could not determine current user. Skipping."
+        return
     fi
 
-    if [ -n "$user" ] && [ "$user" != "root" ]; then
-        user_home=$(getent passwd "$user" | cut -d: -f6)
+    local user_home
+    user_home=$(getent passwd "$user" | cut -d: -f6)
+    
+    if [ -z "$user_home" ]; then
+        return
+    fi
 
-        if [ -n "$user_home" ]; then
-            printMsg "Copying GTK theme CSS files to user config directory..."
+    local backup_dir="$user_home/backup_customizations"
+    local GTK4_DIR="$user_home/.config/gtk-4.0"
+    local GTK3_DIR="$user_home/.config/gtk-3.0"
 
-            # Create directories
-            mkdir -p "$user_home/.config/gtk-4.0"
-            mkdir -p "$user_home/.config/gtk-3.0"
+    # Remove current GTK directories
+    printMsg "Removing current GTK directories..."
+    rm -rf "$GTK4_DIR" "$GTK3_DIR" 2>/dev/null || true
 
-            # Copy GTK4 files
-            if [ -d "/usr/share/themes/${THEME_NAME}/gtk-4.0" ]; then
-                cp -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/gtk.css" "$user_home/.config/gtk-4.0/" 2>/dev/null || true
-                cp -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/gtk-dark.css" "$user_home/.config/gtk-4.0/" 2>/dev/null || true
-                chown -R "$user:$user" "$user_home/.config/gtk-4.0"
+    # Restore from backup if available
+    if [ -d "$backup_dir" ]; then
+        printMsg "Restoring GTK directories from backups..."
+        for backup in "$backup_dir"/gtk-*-*.tar.gz; do
+            if [ -f "$backup" ]; then
+                printMsg "Restoring from $(basename "$backup")..."
+                tar -xzf "$backup" -C "$user_home/.config/" 2>/dev/null || true
             fi
-
-            # Copy GTK3 files
-            if [ -d "/usr/share/themes/${THEME_NAME}/gtk-3.0" ]; then
-                cp -f "/usr/share/themes/${THEME_NAME}/gtk-3.0/gtk.css" "$user_home/.config/gtk-3.0/" 2>/dev/null || true
-                cp -f "/usr/share/themes/${THEME_NAME}/gtk-3.0/gtk-dark.css" "$user_home/.config/gtk-3.0/" 2>/dev/null || true
-
-                # Copy assets if they exist
-                if [ -d "/usr/share/themes/${THEME_NAME}/gtk-3.0/assets" ]; then
-                    cp -rf "/usr/share/themes/${THEME_NAME}/gtk-3.0/assets" "$user_home/.config/gtk-3.0/" 2>/dev/null || true
-                fi
-
-                chown -R "$user:$user" "$user_home/.config/gtk-3.0"
-            fi
-
-            printMsg "GTK CSS files copied to ~/.config"
-        fi
+        done
     fi
 
-    # ============ Configurar color-scheme ============
+    # Restore default GNOME settings
+    printMsg "Restoring default GNOME settings..."
+    local uid
+    uid=$(id -u "$user")
+    local runtime_dir="/run/user/$uid"
 
-    if command -v gsettings >/dev/null 2>&1; then
-        su - "$user" -c "
-            export DISPLAY=:0
-            export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u \"$user\")/bus
-            gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
-        " 2>/dev/null || true
+    su - "$user" -c "
+        export DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus
+        
+        # Reset to default GNOME theme
+        gsettings reset org.gnome.desktop.interface gtk-theme 2>/dev/null || true
+        gsettings reset org.gnome.desktop.interface color-scheme 2>/dev/null || true
+    " 2>/dev/null || true
 
-        printMsg "Color scheme set to prefer-dark"
-    fi
+    # Clear GTK cache
+    rm -rf "$user_home/.cache/gtk-4.0" 2>/dev/null || true
+    rm -rf "$user_home/.cache/gtk-3.0" 2>/dev/null || true
+
+    printMsg "Everforest theme removed successfully"
 }
 
+# Function executed after package upgrade
 post_upgrade() {
+    printMsg "Reapplying configuration after upgrade..."
     post_install
-}
-
-
-post_upgrade() {
-    _run_helper upgrade
-    _print_hint
-}
-
-pre_remove() {
-    _run_helper uninstall
-}
-
-post_remove() {
-    cat <<'EOF'
-==> Everforest theme files removed.
-==> If you skipped the helper, remove ~/.config overrides manually.
-EOF
 }
