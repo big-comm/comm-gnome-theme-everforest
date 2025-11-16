@@ -73,7 +73,36 @@ _run_helper() {
 post_install() {
     _run_helper install
     _print_hint
+   
+    # Config theme for root
+    mkdir -p /root/.config/gtk-3.0 2>/dev/null || true
+    mkdir -p /root/.config/gtk-4.0 2>/dev/null || true
+    
+    # GTK 3 for root
+    cat > /root/.config/gtk-3.0/settings.ini << 'EOF'
+[Settings]
+gtk-theme-name=Everforest-Dark-Medium-B
+gtk-icon-theme-name=Tela-circle-Dark
+gtk-application-prefer-dark-theme=1
+gtk-cursor-theme-name=Everforest-cursors
+EOF
+    
+    # GTK 4 for root
+    cat > /root/.config/gtk-4.0/settings.ini << 'EOF'
+[Settings]
+gtk-theme-name=Everforest-Dark-Medium-B
+gtk-icon-theme-name=Tela-circle-Dark
+gtk-application-prefer-dark-theme=1
+gtk-cursor-theme-name=Everforest-cursors
+EOF
+    
+    echo "Root GTK theme configured."
 }
+
+post_upgrade() {
+    post_install
+}
+
 
 post_upgrade() {
     _run_helper upgrade
