@@ -61,32 +61,27 @@ package() {
     # Install GTK theme
     install -d "${pkgdir}/usr/share/themes"
     
-    # Find the theme directory - try multiple possible names
+    # Find the theme directory
     local theme_source
     if [ -d "${theme_build}/${_theme_target}" ]; then
         theme_source="${theme_build}/${_theme_target}"
     elif [ -d "${theme_build}/${_theme_variant}" ]; then
         theme_source="${theme_build}/${_theme_variant}"
     else
-        # Find any Everforest-Dark-Medium variant
         theme_source=$(find "${theme_build}" -maxdepth 1 -type d -name "Everforest-Dark-Medium*" | sort | tail -1)
     fi
     
     if [ -z "${theme_source}" ] || [ ! -d "${theme_source}" ]; then
-        echo "Available directories in build output:"
-        ls -la "${theme_build}"
         echo "Error: Could not find Everforest theme directory"
         return 1
     fi
     
-    echo "Using theme from: ${theme_source}"
     cp -r "${theme_source}" "${pkgdir}/usr/share/themes/${_theme_target}"
 
-    # Install installation script
+    # Install helper script and assets
     install -Dm755 "${srcdir}/${pkgname}/install.sh" \
         "${pkgdir}/usr/share/${pkgname}/install.sh"
 
-    # Install wallpapers from usr/share directory
     if [ -d "${srcdir}/${pkgname}/usr/share" ]; then
         find "${srcdir}/${pkgname}/usr/share" -maxdepth 1 -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.heic" -o -iname "*.avif" \) | while read -r wallpaper; do
             install -Dm644 "${wallpaper}" \
@@ -94,23 +89,45 @@ package() {
         done
     fi
 
-    # Install documentation
+    # Install docs and license
     install -Dm644 "${srcdir}/${pkgname}/README.md" \
         "${pkgdir}/usr/share/doc/${pkgname}/README.md"
-
-    # Install license
     install -Dm644 "${srcdir}/${pkgname}/LICENSE" \
         "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
-    # After install, fix o index.theme
+    # Fix index.theme
     local theme_index="${pkgdir}/usr/share/themes/${_theme_target}/index.theme"
-    
     if [ -f "${theme_index}" ]; then
-        # Replace GtkTheme and MetacityTheme values to the right name
         sed -i "s/^GtkTheme=.*/GtkTheme=${_theme_target}/" "${theme_index}"
         sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
     fi
     
+    # --------------------------------------------------------------------------
+    # [FIX] Apply custom CSS fix for Loupe image viewer (and other Adwaita apps)
+    # --------------------------------------------------------------------------
+    local gtk_css_file="${pkgdir}/usr/share/themes/${_theme_target}/gtk-4.0/gtk.css"
+    
+    if [ -f "${gtk_css_file}" ]; then
+        echo "Applying custom CSS fix for AdwPreferencesGroup in wide layouts"
+        cat >> "${gtk_css_file}" <<EOF
 
+/* Custom fix for comm-gnome-theme-everforest */
+/*
+* Fixes illegible text color in Loupe's properties sidebar when the window is wide.
+* In wide layouts, AdwPreferencesGroup inherits a card-style background without the
+* corresponding text color change. This forces the correct light text color for
+* titles and subtitles within it, ensuring readability in all layouts.
+*/
+AdwPreferencesGroup .title {
+    color: #fffbef;
+}
+
+AdwPreferencesGroup .subtitle {
+    color: rgba(255, 251, 239, 0.7);
+}
+EOF
+    else
+        echo "Warning: Could not find ${gtk_css_file} to apply fixes."
+    fi    
 
 }
