@@ -277,6 +277,19 @@ EOF
     killall xdg-desktop-portal-gtk 2>/dev/null || true
     killall xdg-desktop-portal-gnome 2>/dev/null || true
 
+        # Fix para Loupe
+    if command -v loupe >/dev/null 2>&1; then
+        local loupe_desktop="/usr/share/applications/org.gnome.Loupe.desktop"
+        
+        if [ -f "${loupe_desktop}" ]; then
+            # Backup do original
+            cp "${loupe_desktop}" "${loupe_desktop}.bak"
+            
+            # Modificar Exec para forçar tema
+            sed -i 's|Exec=|Exec=env GTK_THEME=Everforest-Dark-Medium-B:dark SAL_USE_VCLPLUGIN=gtk4 |' "${loupe_desktop}"
+        fi
+    fi
+
 }
 
 remove_theme() {
