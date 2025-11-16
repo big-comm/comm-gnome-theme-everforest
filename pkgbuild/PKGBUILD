@@ -112,17 +112,5 @@ package() {
     fi
     
 
-    # Fix para Loupe
-    mkdir -p "${pkgdir}/usr/share/applications"
-    
-    local loupe_desktop="${pkgdir}/usr/share/applications/org.gnome.Loupe.desktop"
-    
-    if [ -f /usr/share/applications/org.gnome.Loupe.desktop ]; then
-        cp /usr/share/applications/org.gnome.Loupe.desktop "${loupe_desktop}"
-        
-        # Adicionar variável de ambiente GTK_THEME
-        sed -i 's|^Exec=|Exec=env GTK_THEME=Everforest-Dark-Medium-B:dark |' "${loupe_desktop}"
-    fi
-
 
 }

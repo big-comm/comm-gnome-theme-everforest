@@ -71,32 +71,61 @@ _run_helper() {
 }
 
 post_install() {
-    _run_helper install
     _print_hint
-   
-    # Config theme for root
-    mkdir -p /root/.config/gtk-3.0 2>/dev/null || true
-    mkdir -p /root/.config/gtk-4.0 2>/dev/null || true
-    
-    # GTK 3 for root
-    cat > /root/.config/gtk-3.0/settings.ini << 'EOF'
-[Settings]
-gtk-theme-name=Everforest-Dark-Medium-B
-gtk-icon-theme-name=Tela-circle-Dark
-gtk-application-prefer-dark-theme=1
-gtk-cursor-theme-name=Everforest-cursors
-EOF
-    
-    # GTK 4 for root
-    cat > /root/.config/gtk-4.0/settings.ini << 'EOF'
-[Settings]
-gtk-theme-name=Everforest-Dark-Medium-B
-gtk-icon-theme-name=Tela-circle-Dark
-gtk-application-prefer-dark-theme=1
-gtk-cursor-theme-name=Everforest-cursors
-EOF
-    
-    echo "Root GTK theme configured."
+    _run_helper "install"
+
+    # ============ Copiar CSS para ~/.config ============
+
+    user=$(logname 2>/dev/null || echo "")
+    if [ -z "$user" ]; then
+        user=$(id -un 2>/dev/null || echo "")
+    fi
+
+    if [ -n "$user" ] && [ "$user" != "root" ]; then
+        user_home=$(getent passwd "$user" | cut -d: -f6)
+
+        if [ -n "$user_home" ]; then
+            printMsg "Copying GTK theme CSS files to user config directory..."
+
+            # Create directories
+            mkdir -p "$user_home/.config/gtk-4.0"
+            mkdir -p "$user_home/.config/gtk-3.0"
+
+            # Copy GTK4 files
+            if [ -d "/usr/share/themes/${THEME_NAME}/gtk-4.0" ]; then
+                cp -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/gtk.css" "$user_home/.config/gtk-4.0/" 2>/dev/null || true
+                cp -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/gtk-dark.css" "$user_home/.config/gtk-4.0/" 2>/dev/null || true
+                chown -R "$user:$user" "$user_home/.config/gtk-4.0"
+            fi
+
+            # Copy GTK3 files
+            if [ -d "/usr/share/themes/${THEME_NAME}/gtk-3.0" ]; then
+                cp -f "/usr/share/themes/${THEME_NAME}/gtk-3.0/gtk.css" "$user_home/.config/gtk-3.0/" 2>/dev/null || true
+                cp -f "/usr/share/themes/${THEME_NAME}/gtk-3.0/gtk-dark.css" "$user_home/.config/gtk-3.0/" 2>/dev/null || true
+
+                # Copy assets if they exist
+                if [ -d "/usr/share/themes/${THEME_NAME}/gtk-3.0/assets" ]; then
+                    cp -rf "/usr/share/themes/${THEME_NAME}/gtk-3.0/assets" "$user_home/.config/gtk-3.0/" 2>/dev/null || true
+                fi
+
+                chown -R "$user:$user" "$user_home/.config/gtk-3.0"
+            fi
+
+            printMsg "GTK CSS files copied to ~/.config"
+        fi
+    fi
+
+    # ============ Configurar color-scheme ============
+
+    if command -v gsettings >/dev/null 2>&1; then
+        su - "$user" -c "
+            export DISPLAY=:0
+            export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u \"$user\")/bus
+            gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
+        " 2>/dev/null || true
+
+        printMsg "Color scheme set to prefer-dark"
+    fi
 }
 
 post_upgrade() {
