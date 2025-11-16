@@ -102,13 +102,61 @@ package() {
     install -Dm644 "${srcdir}/${pkgname}/LICENSE" \
         "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
-    # Após instalar o tema, CORRIGIR o index.theme
+    # After install, fix o index.theme
     local theme_index="${pkgdir}/usr/share/themes/${_theme_target}/index.theme"
     
     if [ -f "${theme_index}" ]; then
-        # Substituir os valores de GtkTheme e MetacityTheme pelo nome correto
+        # Replace GtkTheme and MetacityTheme values to the right name
         sed -i "s/^GtkTheme=.*/GtkTheme=${_theme_target}/" "${theme_index}"
         sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
     fi
     
+        
+    # Add CSS fixes for Image Viewer and others
+    local gtk4_css="${pkgdir}/usr/share/themes/${_theme_target}/gtk-4.0/gtk.css"
+    
+    if [ -f "${gtk4_css}" ]; then
+        # Add CSS rules for fix text contrast
+        cat >> "${gtk4_css}" << 'EOF'
+
+/* Fixes para contraste de texto em overlays e Image Viewer */
+overlay label,
+overlay text {
+    color: #d8dcd4;
+}
+
+.osd label,
+.osd text {
+    color: #d8dcd4;
+}
+
+label {
+    color: #d8dcd4;
+}
+
+text selection {
+    background-color: #2d3f34;
+    color: #d8dcd4;
+}
+EOF
+    fi
+    
+    # same for gtk-3.0
+    local gtk3_css="${pkgdir}/usr/share/themes/${_theme_target}/gtk-3.0/gtk.css"
+    
+    if [ -f "${gtk3_css}" ]; then
+        cat >> "${gtk3_css}" << 'EOF'
+
+/* Fixes para contraste de texto */
+label {
+    color: #d8dcd4;
+}
+
+:selected {
+    background-color: #2d3f34;
+    color: #d8dcd4;
+}
+EOF
+    fi
+
 }
