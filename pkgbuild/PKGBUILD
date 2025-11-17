@@ -96,6 +96,7 @@ package() {
             install -Dm644 "${srcdir}/${pkgname}/share/bigicons-papient-dark-green.tar.xz" \
                 "${pkgdir}/usr/share/${pkgname}/bigicons-papient-dark-green.tar.xz"
         fi
+    fi
 
     # Install docs and license
     install -Dm644 "${srcdir}/${pkgname}/README.md" \
