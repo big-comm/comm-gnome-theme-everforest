@@ -119,7 +119,7 @@ package() {
 * titles and subtitles within it, ensuring readability in all layouts.
 */
 AdwPreferencesGroup .title {
-    color: #fffbef;
+    color: #2d353b;
 }
 
 AdwPreferencesGroup .subtitle {
