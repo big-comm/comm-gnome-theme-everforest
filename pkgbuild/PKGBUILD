@@ -109,5 +109,5 @@ package() {
         sed -i "s/^GtkTheme=.*/GtkTheme=${_theme_target}/" "${theme_index}"
         sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
     fi
-    
+
 }
