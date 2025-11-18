@@ -10,7 +10,8 @@ url="https://github.com/big-comm/${pkgname}"
 depends=('gtk3' 'gtk4' 'gnome-shell' 'gtk-engine-murrine')
 makedepends=('git' 'sassc')
 optdepends=('gnome-tweaks: For additional customization'
-            'heif: For AVIF wallpaper conversion')
+            'heif: For AVIF wallpaper conversion'
+            'libreoffice: For integrated theme support')
 
 source=(
     "git+https://github.com/Fausto-Korpsvart/Everforest-GTK-Theme.git"
@@ -102,22 +103,23 @@ package() {
         sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
     fi
 
-        # --------------------------------------------------------------------------
-    # [FIX] Apply custom CSS fix for Loupe image viewer (and other Adwaita apps)
     # --------------------------------------------------------------------------
-    local gtk_css_file="${pkgdir}/usr/share/themes/${_theme_target}/gtk-4.0/gtk.css"
+    # [ENHANCED] Apply comprehensive CSS fixes for better GTK4 application support
+    # --------------------------------------------------------------------------
+    local gtk4_css="${pkgdir}/usr/share/themes/${_theme_target}/gtk-4.0/gtk.css"
+    local gtk3_gtkrc="${pkgdir}/usr/share/themes/${_theme_target}/gtk-3.0/gtkrc"
     
-    if [ -f "${gtk_css_file}" ]; then
-        echo "Applying custom CSS fix for AdwPreferencesGroup in wide layouts"
-        cat >> "${gtk_css_file}" <<EOF
+    if [ -f "${gtk4_css}" ]; then
+        echo "Applying GTK4 CSS enhancements for better app compatibility..."
+        cat >> "${gtk4_css}" <<'EOF'
 
-/* Custom fix for comm-gnome-theme-everforest */
-/*
-* Fixes illegible text color in Loupe's properties sidebar when the window is wide.
-* In wide layouts, AdwPreferencesGroup inherits a card-style background without the
-* corresponding text color change. This forces the correct light text color for
-* titles and subtitles within it, ensuring readability in all layouts.
-*/
+/* =============================================================================
+ * Custom fixes for comm-gnome-theme-everforest
+ * Ensures compatibility with GTK4 applications, particularly LibreOffice
+ * and GTK File Chooser dialogs that use modern Libadwaita components
+ * ============================================================================= */
+
+/* Fix for Libadwaita AdwPreferencesGroup (Loupe, GNOME Settings, etc) */
 AdwPreferencesGroup .title {
     color: #2d353b;
 }
@@ -125,9 +127,120 @@ AdwPreferencesGroup .title {
 AdwPreferencesGroup .subtitle {
     color: rgba(255, 251, 239, 0.7);
 }
+
+/* Ensure file chooser dialogs inherit dark theme properly */
+.dialog {
+    background-color: @theme_bg_color;
+    color: @theme_fg_color;
+}
+
+.dialog-action-area {
+    background-color: @theme_bg_color;
+}
+
+/* Fix for LibreOffice and other apps using native file pickers */
+filechooser window,
+filechooser .background {
+    background-color: @theme_bg_color;
+    color: @theme_fg_color;
+}
+
+filechooser sidebar {
+    background-color: shade(@theme_bg_color, 0.95);
+}
+
+filechooser .sidebar:backdrop {
+    background-color: shade(@theme_bg_color, 0.9);
+}
+
+/* Ensure popovers and menus respect dark theme */
+popover,
+.popover {
+    background-color: @theme_bg_color;
+    color: @theme_fg_color;
+}
+
+/* GTK File Chooser search entry */
+searchentry,
+.search {
+    background-color: shade(@theme_bg_color, 1.02);
+    color: @theme_fg_color;
+}
+
+searchentry:focus,
+.search:focus {
+    background-color: shade(@theme_bg_color, 1.05);
+    outline: 2px solid @accent_color;
+}
+
+/* Ensure path bar stays dark */
+.path-bar,
+pathbar {
+    background-color: shade(@theme_bg_color, 0.98);
+    color: @theme_fg_color;
+}
+
+/* Fix for column headers in file list views */
+columnheader,
+.column-header {
+    background-color: shade(@theme_bg_color, 1.01);
+    color: @theme_fg_color;
+}
+
 EOF
+        echo "GTK4 CSS enhancements applied successfully"
     else
-        echo "Warning: Could not find ${gtk_css_file} to apply fixes."
+        echo "Warning: Could not find ${gtk4_css} to apply fixes."
     fi
 
+    # Also ensure GTK3 compatibility for older GTK3 applications
+    if [ -f "${gtk3_gtkrc}" ]; then
+        echo "Applying GTK3 compatibility settings..."
+        cat >> "${gtk3_gtkrc}" <<'EOF'
+
+# Ensure file dialogs use the dark theme in GTK3
+style "file-dialog-style" {
+    bg[NORMAL] = @bg_color
+    bg[PRELIGHT] = shade(@bg_color, 1.1)
+    bg[ACTIVE] = shade(@bg_color, 0.9)
+    fg[NORMAL] = @fg_color
+}
+widget "GtkFileChooserDialog*" style "file-dialog-style"
+widget "*GtkFileChooser*" style "file-dialog-style"
+
+EOF
+        echo "GTK3 settings applied"
+    fi
+
+    # --------------------------------------------------------------------------
+    # [NEW] Create post-install helper for environment setup
+    # --------------------------------------------------------------------------
+    install -Dm755 /dev/stdin "${pkgdir}/usr/share/${pkgname}/setup-gtk-env.sh" <<'EOFSCRIPT'
+#!/usr/bin/env bash
+# Post-install script to help users set up GTK_THEME environment
+# Run this after installing the package to ensure proper theme application
+
+CONFIG_DIR="${HOME}/.config"
+STATE_DIR="${CONFIG_DIR}/comm-gnome-theme-everforest"
+ENV_THEME_FILE="${STATE_DIR}/gtk-theme.env"
+THEME_NAME="Everforest-Dark-Medium-B"
+
+mkdir -p "${STATE_DIR}"
+
+# Create environment file
+cat > "${ENV_THEME_FILE}" <<EOF
+export GTK_THEME=${THEME_NAME}
+EOF
+
+# Add to shell profiles
+for shell_file in ~/.bashrc ~/.zshrc ~/.profile; do
+    if [ -f "${shell_file}" ]; then
+        if ! grep -q "gtk-theme.env" "${shell_file}"; then
+            echo "[ -f \"${ENV_THEME_FILE}\" ] && source \"${ENV_THEME_FILE}\"" >> "${shell_file}"
+        fi
+    fi
+done
+
+echo "GTK_THEME environment variable configured"
+EOFSCRIPT
 }
