@@ -8,12 +8,6 @@ THEME_NAME="Everforest-Dark-Medium-B"
 WALLPAPER_NAME="bokeh-small-plant.avif"
 WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
 
-# NOVO: Variáveis para instalação de pacote de ícones
-ICON_PACKAGE="bigicons-papient-dark-green.tar.xz"
-ICON_PACKAGE_PATH="/usr/share/comm-gnome-theme-everforest/${ICON_PACKAGE}"
-ICON_THEME_NAME="BigIcons-Papient-Dark-Green"
-STATE_ICON_THEME_FILE="${STATE_DIR}/prev-icon-theme"
-
 CONFIG_DIR="${HOME}/.config"
 STATE_DIR="${CONFIG_DIR}/comm-gnome-theme-everforest"
 STATE_USER_THEME_FILE="${STATE_DIR}/prev-user-theme"
@@ -195,94 +189,7 @@ remove_wallpaper() {
     restore_gsettings_value org.gnome.desktop.background picture-uri-dark "${STATE_WALL_DARK_FILE}"
 }
 
-# NOVO: Função para instalar pacote de ícones
-install_icon_theme() {
-    if [ ! -f "${ICON_PACKAGE_PATH}" ]; then
-        printMsg "[2/4] Icon package not found at ${ICON_PACKAGE_PATH}"
-        return
-    fi
 
-    printMsg "[2/4] Extracting icon theme..."
-
-    local icons_dest="/usr/share/icons"
-    local backup_dir="${HOME}/.local/share/icon_theme_backups"
-
-    # Criar diretório de backup
-    mkdir -p "${backup_dir}"
-
-    # Extrair para local temporário
-    local temp_extract
-    temp_extract=$(mktemp -d)
-    if tar -xf "${ICON_PACKAGE_PATH}" -C "${temp_extract}" 2>/dev/null; then
-
-        # Encontrar o diretório do tema de ícones (geralmente o primeiro diretório no tar)
-        local theme_dir
-        theme_dir=$(find "${temp_extract}" -mindepth 1 -maxdepth 1 -type d | head -1)
-
-        if [ -d "${theme_dir}" ]; then
-            local theme_name
-            theme_name=$(basename "${theme_dir}")
-
-            # Fazer backup do tema existente se existir
-            if [ -d "${icons_dest}/${theme_name}" ]; then
-                printMsg "Backing up existing icon theme..."
-                tar -czf "${backup_dir}/${theme_name}-$(date +%Y%m%d%H%M%S).tar.gz" \
-                    -C "${icons_dest}" "${theme_name}" 2>/dev/null || true
-            fi
-
-            # Instalar o novo tema de ícones
-            cp -rf "${theme_dir}" "${icons_dest}/"
-            printMsg "Icon theme installed: ${theme_name}"
-
-            # Definir como padrão via gsettings
-            if command -v gsettings &>/dev/null; then
-                set_gsettings_with_backup \
-                    org.gnome.desktop.interface icon-theme "'${theme_name}'" \
-                    "${STATE_ICON_THEME_FILE}" \
-                    "Icon theme set to ${theme_name}." || true
-            fi
-        else
-            printMsg "Warning: Could not find icon theme directory in archive"
-        fi
-
-        # Limpar
-        rm -rf "${temp_extract}"
-    else
-        printMsg "Warning: Failed to extract icon package"
-    fi
-}
-
-# NOVO: Função para desinstalar pacote de ícones
-uninstall_icon_theme() {
-    printMsg "Checking for icon theme backups..."
-
-    local backup_dir="${HOME}/.local/share/icon_theme_backups"
-
-    if [ -d "${backup_dir}" ]; then
-        printMsg "Restoring icon theme from backup..."
-
-        # Encontrar o backup mais recente
-        local latest_backup
-        latest_backup=$(ls -t "${backup_dir}"/*.tar.gz 2>/dev/null | head -1)
-
-        if [ -n "${latest_backup}" ]; then
-            local theme_name
-            theme_name=$(basename "${latest_backup}" | cut -d'-' -f1-3)
-
-            # Remover tema atual
-            rm -rf "/usr/share/icons/${theme_name}"
-
-            # Restaurar do backup
-            tar -xzf "${latest_backup}" -C /usr/share/icons/ 2>/dev/null || true
-            printMsg "Icon theme restored from backup"
-        fi
-    fi
-
-    # Resetar tema de ícones para padrão
-    if command -v gsettings &>/dev/null; then
-        restore_gsettings_value org.gnome.desktop.interface icon-theme "${STATE_ICON_THEME_FILE}"
-    fi
-}
 
 apply_gsettings_theme() {
     if ! command -v gsettings &>/dev/null; then
@@ -347,9 +254,6 @@ EOF
     link_gtk4_assets
     apply_gsettings_theme
 
-    # NOVO: Instalar tema de ícones
-    install_icon_theme
-
     apply_wallpaper
 
     if command -v gsettings &>/dev/null; then
@@ -376,9 +280,6 @@ remove_theme() {
         restore_backup "${gtk4_config}"
     fi
     unlink_gtk4_assets
-
-    # NOVO: Desinstalar tema de ícones
-    uninstall_icon_theme
 
     remove_wallpaper
     restore_gsettings_value org.gnome.desktop.interface gtk-theme "${STATE_GTK_THEME_FILE}"
