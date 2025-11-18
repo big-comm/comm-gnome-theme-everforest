@@ -147,6 +147,7 @@ compgen -G "${1}.backup-*" > /dev/null 2>&1
 
 }
 
+# [FIX] Sempre salvar o valor anterior, mesmo que arquivo exista
 save_gsettings_value() {
 
 local schema="$1" key="$2" file="$3"
@@ -155,17 +156,14 @@ local schema="$1" key="$2" file="$3"
 
 if command -v gsettings &>/dev/null; then
 
-if [ ! -s "${file}" ]; then
-
 local value
 
 if value=$(gsettings get "${schema}" "${key}" 2>/dev/null); then
 
+# [CHANGED] Remove a verificação "if ! -s ${file}" para SEMPRE salvar
 printf '%s\n' "${value}" > "${file}"
 
-printf '%s %s %s\n' "${schema}" "${key}" "${value}" >> "${STATE_LOG_FILE}"
-
-fi
+printf '%s %s %s\n' "${schema}" "${key}" "${value}" >> "${STATE_LOG_FILE}" 2>/dev/null || true
 
 fi
 
@@ -211,6 +209,7 @@ return 1
 
 fi
 
+# [FIX] Sempre salvar o valor anterior ANTES de modificar
 save_gsettings_value "${schema}" "${key}" "${backup_file}"
 
 if gsettings set "${schema}" "${key}" "${target_value}"; then
@@ -279,7 +278,7 @@ done
 
 }
 
-# [NEW] Configure GTK_THEME environment variable for persistent application of theme
+# [FIX] Garantir que GTK_THEME persista via ~/.profile (shell login)
 set_gtk_theme_env() {
 
 printMsg "Setting up GTK_THEME environment variable..."
@@ -293,57 +292,78 @@ EOF
 
 printMsg "GTK_THEME environment file created at ${ENV_THEME_FILE}"
 
-# Source it for the current session
-source "${ENV_THEME_FILE}" || true
+# [FIX] Source it for the current session
+source "${ENV_THEME_FILE}" 2>/dev/null || true
 
-# Ensure it's loaded in shell initialization files
-local shell_init_files=(
-  "${HOME}/.bashrc"
-  "${HOME}/.zshrc"
-  "${HOME}/.profile"
-)
+# [FIX] Ensure it's loaded in shell initialization files - prioritize ~/.profile for login shells
+# ~/.profile is read by login shells (like at terminal startup)
+# ~/.bashrc is read by interactive non-login shells
+# ~/.zshrc is read by zsh interactive shells
 
-for init_file in "${shell_init_files[@]}"; do
-  if [ -f "${init_file}" ]; then
-    # Check if the sourcing is already there
-    if ! grep -q "source.*gtk-theme.env" "${init_file}" && ! grep -q "GTK_THEME.*${THEME_NAME}" "${init_file}"; then
-      echo "[ -f \"${ENV_THEME_FILE}\" ] && source \"${ENV_THEME_FILE}\"" >> "${init_file}"
-      printMsg "Added GTK_THEME to ${init_file}"
+# First, always add to ~/.profile (most reliable for login shells)
+if [ -f "${HOME}/.profile" ]; then
+    if ! grep -q "gtk-theme.env" "${HOME}/.profile"; then
+        echo "[ -f \"${ENV_THEME_FILE}\" ] && source \"${ENV_THEME_FILE}\"" >> "${HOME}/.profile"
+        printMsg "Added GTK_THEME to ~/.profile"
     fi
-  fi
-done
+fi
 
-# Also set it for the current session
+# Also add to ~/.bashrc for bash users
+if [ -f "${HOME}/.bashrc" ]; then
+    if ! grep -q "gtk-theme.env" "${HOME}/.bashrc"; then
+        echo "[ -f \"${ENV_THEME_FILE}\" ] && source \"${ENV_THEME_FILE}\"" >> "${HOME}/.bashrc"
+        printMsg "Added GTK_THEME to ~/.bashrc"
+    fi
+fi
+
+# Also add to ~/.zshrc for zsh users
+if [ -f "${HOME}/.zshrc" ]; then
+    if ! grep -q "gtk-theme.env" "${HOME}/.zshrc"; then
+        echo "[ -f \"${ENV_THEME_FILE}\" ] && source \"${ENV_THEME_FILE}\"" >> "${HOME}/.zshrc"
+        printMsg "Added GTK_THEME to ~/.zshrc"
+    fi
+fi
+
+# [FIX] CRITICAL: Also set it for the current session immediately
 export GTK_THEME="${THEME_NAME}"
 
 }
 
-# [NEW] Remove GTK_THEME environment variable
+# [FIX] Remove GTK_THEME environment variable
 unset_gtk_theme_env() {
 
 if [ -f "${ENV_THEME_FILE}" ]; then
-  rm -f "${ENV_THEME_FILE}"
-  printMsg "Removed GTK_THEME environment file"
+
+rm -f "${ENV_THEME_FILE}"
+
+printMsg "Removed GTK_THEME environment file"
+
 fi
 
 # Remove from shell initialization files
-local shell_init_files=(
-  "${HOME}/.bashrc"
-  "${HOME}/.zshrc"
-  "${HOME}/.profile"
-)
+if [ -f "${HOME}/.profile" ]; then
 
-for init_file in "${shell_init_files[@]}"; do
-  if [ -f "${init_file}" ]; then
-    sed -i "\|${ENV_THEME_FILE}|d" "${init_file}"
-  fi
-done
+sed -i "\|${ENV_THEME_FILE}|d" "${HOME}/.profile"
+
+fi
+
+if [ -f "${HOME}/.bashrc" ]; then
+
+sed -i "\|${ENV_THEME_FILE}|d" "${HOME}/.bashrc"
+
+fi
+
+if [ -f "${HOME}/.zshrc" ]; then
+
+sed -i "\|${ENV_THEME_FILE}|d" "${HOME}/.zshrc"
+
+fi
 
 unset GTK_THEME
 
 }
 
-# [NEW] Configure LibreOffice to use the GTK theme
+# Configure LibreOffice to use the GTK theme
 set_libreoffice_theme() {
 
 printMsg "Configuring LibreOffice theme..."
@@ -352,47 +372,58 @@ mkdir -p "${LIBREOFFICE_USER_DIR}"
 
 # Create backup of existing registrymodifications.xcu if it exists
 if [ -f "${LIBREOFFICE_REGISTRYMODIFICATIONS}" ]; then
-  backup_config "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
+backup_config "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
 fi
 
 # If registrymodifications.xcu doesn't exist, create a basic one
 if [ ! -f "${LIBREOFFICE_REGISTRYMODIFICATIONS}" ]; then
-  cat > "${LIBREOFFICE_REGISTRYMODIFICATIONS}" <<'EOF'
+
+cat > "${LIBREOFFICE_REGISTRYMODIFICATIONS}" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://openoffice.org/2001/registry http://openoffice.org/2001/registry.xsd">
 </oor:items>
 EOF
+
 fi
 
 # Add or update the GTK theme setting for LibreOffice
-# This tells LibreOffice to use the system GTK theme instead of falling back to a generic theme
 local gtk_setting='<item oor:path="/org.openoffice.Office.Common/Appearance"><node oor:name="VisualEffect"><value oor:op="fuse">1</value></node></item>'
 local theme_setting='<item oor:path="/org.openoffice.Office.Common/Appearance"><node oor:name="Theme"><value oor:op="fuse">0</value></node></item>'
 
 # Check if settings already exist and update them, or add them
 if ! grep -q 'oor:path="/org.openoffice.Office.Common/Appearance' "${LIBREOFFICE_REGISTRYMODIFICATIONS}"; then
-  # Insert before closing tag
-  sed -i '/<\/oor:items>/i\  '"${gtk_setting}" "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
+# Insert before closing tag
+sed -i '/<\/oor:items>/i\  '"${gtk_setting}" "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
 fi
 
 # Force dark mode preference in LibreOffice
 local dark_mode_setting='<item oor:path="/org.openoffice.Office.Common/Appearance"><node oor:name="DarkMode"><value oor:op="fuse">true</value></node></item>'
 
 if ! grep -q 'DarkMode' "${LIBREOFFICE_REGISTRYMODIFICATIONS}"; then
-  sed -i '/<\/oor:items>/i\  '"${dark_mode_setting}" "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
+sed -i '/<\/oor:items>/i\  '"${dark_mode_setting}" "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
 fi
 
 printMsg "LibreOffice configuration updated"
 
 }
 
-# [NEW] Remove LibreOffice theme configuration
+# Remove LibreOffice theme configuration
 unset_libreoffice_theme() {
 
 if [ -f "${LIBREOFFICE_REGISTRYMODIFICATIONS}" ]; then
-  restore_backup "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
+restore_backup "${LIBREOFFICE_REGISTRYMODIFICATIONS}"
+
 else
-  printMsg "LibreOffice registry not found or already restored"
+
+printMsg "LibreOffice registry not found or already restored"
+
 fi
 
 }
@@ -467,6 +498,8 @@ fi
 
 local theme_value="'${THEME_NAME}'"
 
+# [FIX] Now save_gsettings_value is called inside set_gsettings_with_backup
+# This ensures we ALWAYS capture the previous theme before modifying
 set_gsettings_with_backup \
   org.gnome.shell.extensions.user-theme name "${theme_value}" "${STATE_USER_THEME_FILE}" \
   "Shell user-theme set to ${THEME_NAME}." || true
@@ -550,7 +583,6 @@ link_gtk4_assets
 
 apply_gsettings_theme
 
-# [NEW] Apply theme to LibreOffice and set GTK_THEME environment variable
 set_libreoffice_theme
 
 set_gtk_theme_env
@@ -587,7 +619,6 @@ unlink_gtk4_assets
 
 remove_wallpaper
 
-# [NEW] Remove LibreOffice and GTK_THEME configurations
 unset_libreoffice_theme
 
 unset_gtk_theme_env
