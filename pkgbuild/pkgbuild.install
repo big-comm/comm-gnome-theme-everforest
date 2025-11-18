@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # pkgbuild.install - Installation script for comm-gnome-theme-everforest
-# Enhanced with robust backup and restore.
+# Corrected version with standard gsettings application and robust backup.
 
 # Color definitions for status messages
 blueDark="\e[1;38;5;33m"     # Bold dark blue
-mediumBlue="\e[1;38;5;32m"   # Bold medium blue
 lightBlue="\e[1;38;5;39m"    # Bold light blue
 cyan="\e[1;38;5;45m"         # Bold cyan
 white="\e[1;97m"             # Bold white
@@ -16,203 +15,117 @@ printMsg() {
     echo -e "${blueDark}[${lightBlue}comm-gnome-theme-everforest${blueDark}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
 }
 
-# Function executed before package installation
-pre_install() {
-    printMsg "Preparing to install Everforest theme for GNOME..."
+# --- Helper function to get the current user ---
+_get_user() {
+    if [ -n "$SUDO_USER" ]; then
+        echo "$SUDO_USER"
+    elif [ -n "$LOGNAME" ]; then
+        echo "$LOGNAME"
+    else
+        # Fallback for other scenarios
+        find /run/user -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | while read -r uid; do
+            if [ "$(id -u -n "$uid" 2>/dev/null)" ]; then
+                echo "$(id -u -n "$uid")"
+                break
+            fi
+        done
+    fi
 }
 
-# Function executed after package installation
-post_install() {
-    printMsg "Applying Everforest theme for GNOME and configuring GTK..."
+# --- Main Functions ---
 
-    # Robust user detection
-    local user
-    user=$(logname 2>/dev/null)
-    if [ -z "$user" ]; then
-        user=$(id -un 2>/dev/null)
-    fi
+post_install() {
+    local user=$(_get_user)
     if [ -z "$user" ] || [ "$user" = "root" ]; then
-        printMsg "Could not determine current user. Skipping theme application."
+        printMsg "Could not determine the graphical user. Please apply the theme manually."
         return
     fi
 
     local user_home
     user_home=$(getent passwd "$user" | cut -d: -f6)
-    
     if [ -z "$user_home" ]; then
         printMsg "Could not determine home directory for user $user. Skipping."
         return
     fi
+    
+    local uid
+    uid=$(id -u "$user")
 
-    # Backup current GNOME settings to a file
-    local backup_file="$user_home/.config/gnome-settings-backup-everforest.txt"
-    printMsg "Backing up current GNOME settings to $backup_file..."
-    su - "$user" -c "
-        export DISPLAY=:0;
-        export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$user")/bus;
-        {
-            echo org.gnome.desktop.interface gtk-theme \$(gsettings get org.gnome.desktop.interface gtk-theme);
-            echo org.gnome.desktop.interface color-scheme \$(gsettings get org.gnome.desktop.interface color-scheme);
-        } > \"$backup_file\"
-    "
+    printMsg "Applying Everforest theme for user '$user'..."
 
-    # Define theme paths
-    local THEMES_DIR="/usr/share/themes"
     local THEME_TARGET="Everforest-Dark-Medium-B"
-    local GTK4_DIR="$user_home/.config/gtk-4.0"
-    local GTK3_DIR="$user_home/.config/gtk-3.0"
+    local WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/bokeh-small-plant.avif"
+    local backup_file="$user_home/.config/gnome-settings-backup-$(date +%Y%m%d%H%M%S).txt"
 
-    printMsg "Using theme: $THEME_TARGET"
-    printMsg "User: $user (home: $user_home)"
-
-    # Backup and create GTK directories
-    for dir in "$GTK4_DIR" "$GTK3_DIR"; do
-        if [ -d "$dir" ]; then
-            mkdir -p "$user_home/backup_customizations"
-            printMsg "Backing up existing $(basename "$dir")..."
-            tar -czf "$user_home/backup_customizations/$(basename "$dir")-$(date +%Y%m%d%H%M%S).tar.gz" \
-                -C "$(dirname "$dir")" "$(basename "$dir")" 2>/dev/null || true
-        else
-            mkdir -p "$dir"
-        fi
-        chown -R "$user:$user" "$dir"
-    done
-
-    # Copy GTK4 theme files
-    if [ -d "$THEMES_DIR/$THEME_TARGET/gtk-4.0" ]; then
-        printMsg "Copying GTK 4.0 theme files..."
-        cp -rf "$THEMES_DIR/$THEME_TARGET/gtk-4.0/"* "$GTK4_DIR/" 2>/dev/null || {
-            printMsg "Warning: Failed to copy GTK4 files"
-        }
-    else
-        printMsg "Warning: GTK 4.0 directory not found at $THEMES_DIR/$THEME_TARGET/gtk-4.0"
-    fi
-
-    # Copy GTK3 theme files
-    if [ -d "$THEMES_DIR/$THEME_TARGET/gtk-3.0" ]; then
-        printMsg "Copying GTK 3.0 theme files..."
-        cp -rf "$THEMES_DIR/$THEME_TARGET/gtk-3.0/"* "$GTK3_DIR/" 2>/dev/null || {
-            printMsg "Warning: Failed to copy GTK3 files"
-        }
-
-        # Copy assets if they exist
-        if [ -d "$THEMES_DIR/$THEME_TARGET/gtk-3.0/assets" ]; then
-            printMsg "Copying GTK 3.0 assets..."
-            cp -rf "$THEMES_DIR/$THEME_TARGET/gtk-3.0/assets/"* "$GTK3_DIR/" 2>/dev/null || true
-        fi
-    else
-        printMsg "Warning: GTK 3.0 directory not found at $THEMES_DIR/$THEME_TARGET/gtk-3.0"
-    fi
-
-    # Set correct ownership
-    chown -R "$user:$user" "$GTK4_DIR"
-    chown -R "$user:$user" "$GTK3_DIR"
-    chown -R "$user:$user" "$user_home/backup_customizations" 2>/dev/null || true
-
-    printMsg "GTK CSS files copied successfully"
-
-    # Apply GNOME settings using proper su - context
-    printMsg "Applying GNOME settings for user $user..."
+    # Run commands as the user
     su - "$user" -c "
-        export DISPLAY=:0
-        export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$user")/bus
-        
+        export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/$uid/bus'
+
+        # Backup current settings before changing them
+        echo 'Backing up current theme and wallpaper settings...'
+        {
+            echo 'org.gnome.desktop.interface gtk-theme '\"$(gsettings get org.gnome.desktop.interface gtk-theme)\";
+            echo 'org.gnome.desktop.interface color-scheme '\"$(gsettings get org.gnome.desktop.interface color-scheme)\";
+            echo 'org.gnome.desktop.background picture-uri '\"$(gsettings get org.gnome.desktop.background picture-uri)\";
+            echo 'org.gnome.desktop.background picture-uri-dark '\"$(gsettings get org.gnome.desktop.background picture-uri-dark)\";
+        } > \"$backup_file\"
+
+        # Apply the new theme and wallpaper
+        echo 'Applying new settings...'
         gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET'
         gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
-        
-        echo 'GTK Theme set to:' \$(gsettings get org.gnome.desktop.interface gtk-theme)
-        echo 'Color Scheme set to:' \$(gsettings get org.gnome.desktop.interface color-scheme)
+        gsettings set org.gnome.desktop.background picture-uri 'file://$WALLPAPER_PATH'
+        gsettings set org.gnome.desktop.background picture-uri-dark 'file://$WALLPAPER_PATH'
     "
 
-    # Clear GTK cache to force reload
-    printMsg "Clearing GTK cache..."
-    rm -rf "$user_home/.cache/gtk-4.0" 2>/dev/null || true
-    rm -rf "$user_home/.cache/gtk-3.0" 2>/dev/null || true
-
-    printMsg "Everforest theme applied successfully!"
-    printMsg "You may need to restart GNOME Shell or reboot for full effect."
+    printMsg "Everforest theme and wallpaper applied successfully!"
+    printMsg "A backup of your previous settings was saved to: $backup_file"
+    printMsg "You may need to restart GNOME Shell (Alt+F2, r, Enter) or reboot for the full effect."
 }
 
-# Function executed before package removal
-pre_remove() {
-    printMsg "Preparing to remove Everforest theme..."
-}
-
-# Function executed after package removal
 post_remove() {
-    printMsg "Removing Everforest theme and restoring previous settings..."
-
-    local user
-    user=$(logname 2>/dev/null)
-    if [ -z "$user" ]; then
-        user=$(id -un 2>/dev/null)
-    fi
+    local user=$(_get_user)
     if [ -z "$user" ] || [ "$user" = "root" ]; then
-        printMsg "Could not determine current user. Skipping."
+        printMsg "Could not determine user. Please restore your theme manually."
         return
     fi
-
+    
     local user_home
     user_home=$(getent passwd "$user" | cut -d: -f6)
-    
     if [ -z "$user_home" ]; then
         return
     fi
 
-    local backup_dir="$user_home/backup_customizations"
-    local GTK4_DIR="$user_home/.config/gtk-4.0"
-    local GTK3_DIR="$user_home/.config/gtk-3.0"
-    local backup_file="$user_home/.config/gnome-settings-backup-everforest.txt"
+    local uid
+    uid=$(id -u "$user")
+    
+    # Find the latest backup file
+    local latest_backup
+    latest_backup=$(find "$user_home/.config" -name 'gnome-settings-backup-*.txt' -print0 | xargs -0 ls -t | head -n 1)
 
-    # Restore GNOME settings from backup file
-    if [ -f "$backup_file" ]; then
-        printMsg "Restoring GNOME settings from $backup_file..."
-        while IFS= read -r line; do
-            schema=$(echo "$line" | awk '{print $1}')
-            key=$(echo "$line" | awk '{print $2}')
-            value=$(echo "$line" | cut -d' ' -f3-)
-
-            su - "$user" -c "
-                export DISPLAY=:0;
-                export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$user")/bus;
-                gsettings set $schema $key $value
-            "
-        done < "$backup_file"
-        rm "$backup_file"
+    if [ -f "$latest_backup" ]; then
+        printMsg "Restoring previous GNOME settings from $(basename "$latest_backup")..."
+        su - "$user" -c "
+            export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/$uid/bus'
+            while read -r schema key value; do
+                gsettings set \"\$schema\" \"\$key\" \"\$value\"
+            done < \"$latest_backup\"
+        "
+        # Optional: remove the backup file after restoring
+        # rm "$latest_backup"
     else
-        printMsg "No GNOME settings backup found. Skipping restoration."
+        printMsg "No settings backup found. Resetting to GNOME defaults."
+        su - "$user" -c "
+            export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/$uid/bus'
+            gsettings reset org.gnome.desktop.interface gtk-theme
+            gsettings reset org.gnome.desktop.interface color-scheme
+        "
     fi
 
-    # Remove current GTK directories
-    printMsg "Removing current GTK directories..."
-    rm -rf "$GTK4_DIR" "$GTK3_DIR" 2>/dev/null || true
-
-    # Restore GTK directories from backup if available
-    if [ -d "$backup_dir" ]; then
-        printMsg "Restoring GTK directories from backups..."
-        # Find the latest backup for each directory
-        latest_gtk4_backup=$(ls -t "$backup_dir"/gtk-4.0-*.tar.gz 2>/dev/null | head -n1)
-        latest_gtk3_backup=$(ls -t "$backup_dir"/gtk-3.0-*.tar.gz 2>/dev/null | head -n1)
-
-        if [ -f "$latest_gtk4_backup" ]; then
-            printMsg "Restoring from $(basename "$latest_gtk4_backup")..."
-            tar -xzf "$latest_gtk4_backup" -C "$user_home/.config/" 2>/dev/null || true
-        fi
-        if [ -f "$latest_gtk3_backup" ]; then
-            printMsg "Restoring from $(basename "$latest_gtk3_backup")..."
-            tar -xzf "$latest_gtk3_backup" -C "$user_home/.config/" 2>/dev/null || true
-        fi
-    fi
-
-    # Clear GTK cache
-    rm -rf "$user_home/.cache/gtk-4.0" 2>/dev/null || true
-    rm -rf "$user_home/.cache/gtk-3.0" 2>/dev/null || true
-
-    printMsg "Everforest theme removed and previous settings restored."
+    printMsg "Everforest theme removed and settings restored."
 }
 
-# Function executed after package upgrade
 post_upgrade() {
-    printMsg "Reapplying configuration after upgrade..."
+    printMsg "Re-applying Everforest theme after upgrade..."
     post_install
 }
