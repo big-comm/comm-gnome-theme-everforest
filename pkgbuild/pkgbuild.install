@@ -1,131 +1,92 @@
 #!/usr/bin/env bash
-# pkgbuild.install - Installation script for comm-gnome-theme-everforest
-# Corrected version with standard gsettings application and robust backup.
 
-# Color definitions for status messages
-blueDark="\e[1;38;5;33m"     # Bold dark blue
-lightBlue="\e[1;38;5;39m"    # Bold light blue
-cyan="\e[1;38;5;45m"         # Bold cyan
-white="\e[1;97m"             # Bold white
-reset="\e[0m"                # Reset text formatting
+pkgname=comm-gnome-theme-everforest
+_helper="/usr/share/${pkgname}/install.sh"
 
-# Print status messages
-printMsg() {
-    local message=$1
-    echo -e "${blueDark}[${lightBlue}comm-gnome-theme-everforest${blueDark}]${reset} ${cyan}→${reset} ${white}${message}${reset}"
+_print_hint() {
+    cat <<'EOF'
+==> Everforest theme files are in /usr/share/themes/Everforest-Dark-Medium-B.
+==> The helper was invoked automatically for the detected desktop user.
+==> Re-run it manually for other users or if the session was not detected:
+    /usr/share/comm-gnome-theme-everforest/install.sh [--install|--upgrade|--uninstall]
+EOF
 }
 
-# --- Helper function to get the current user ---
-_get_user() {
-    if [ -n "$SUDO_USER" ]; then
-        echo "$SUDO_USER"
-    elif [ -n "$LOGNAME" ]; then
-        echo "$LOGNAME"
-    else
-        # Fallback for other scenarios
-        find /run/user -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | while read -r uid; do
-            if [ "$(id -u -n "$uid" 2>/dev/null)" ]; then
-                echo "$(id -u -n "$uid")"
-                break
-            fi
-        done
+_guess_target_user() {
+    if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+        printf '%s\n' "${SUDO_USER}"
+        return
+    fi
+
+    if command -v logname >/dev/null 2>&1; then
+        local ln
+        if ln=$(logname 2>/dev/null) && [ -n "${ln}" ] && [ "${ln}" != "root" ]; then
+            printf '%s\n' "${ln}"
+            return
+        fi
+    fi
+
+    if command -v loginctl >/dev/null 2>&1; then
+        loginctl list-sessions --no-legend 2>/dev/null | awk '$3 && $3 != "root" {print $3; exit}'
+        return
     fi
 }
 
-# --- Main Functions ---
+_run_helper() {
+    local action="$1"
+    [ -x "${_helper}" ] || return
+
+    local user
+    user=$(_guess_target_user)
+    local action_flag="--${action}"
+
+    if [ -n "${user}" ] && id -u "${user}" >/dev/null 2>&1; then
+        local uid
+        uid=$(id -u "${user}")
+        local runtime="/run/user/${uid}"
+        local env_vars=()
+        local home_dir
+        home_dir=$(getent passwd "${user}" | cut -d: -f6)
+        env_vars+=("HOME=${home_dir:-/home/${user}}")
+        env_vars+=("USER=${user}" "LOGNAME=${user}")
+        if [ -d "${runtime}" ]; then
+            env_vars+=("XDG_RUNTIME_DIR=${runtime}")
+            if [ -S "${runtime}/bus" ]; then
+                env_vars+=("DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime}/bus")
+            fi
+        fi
+
+        local switch_cmd
+        if command -v runuser >/dev/null 2>&1; then
+            switch_cmd=(runuser -u "${user}" --)
+        else
+            switch_cmd=(sudo -H -u "${user}")
+        fi
+
+        "${switch_cmd[@]}" env "${env_vars[@]}" "${_helper}" "${action_flag}" || \
+            echo "==> Warning: Failed to run helper for ${user}. Run ${_helper} ${action_flag} manually."
+    else
+        echo "==> Warning: Could not detect a non-root desktop user. Run ${_helper} ${action_flag} manually if needed."
+    fi
+}
 
 post_install() {
-    local user=$(_get_user)
-    if [ -z "$user" ] || [ "$user" = "root" ]; then
-        printMsg "Could not determine the graphical user. Please apply the theme manually."
-        return
-    fi
-
-    local user_home
-    user_home=$(getent passwd "$user" | cut -d: -f6)
-    if [ -z "$user_home" ]; then
-        printMsg "Could not determine home directory for user $user. Skipping."
-        return
-    fi
-    
-    local uid
-    uid=$(id -u "$user")
-
-    printMsg "Applying Everforest theme for user '$user'..."
-
-    local THEME_TARGET="Everforest-Dark-Medium-B"
-    local WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/bokeh-small-plant.avif"
-    local backup_file="$user_home/.config/gnome-settings-backup-$(date +%Y%m%d%H%M%S).txt"
-
-    # Run commands as the user
-    su - "$user" -c "
-        export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/$uid/bus'
-
-        # Backup current settings before changing them
-        echo 'Backing up current theme and wallpaper settings...'
-        {
-            echo 'org.gnome.desktop.interface gtk-theme '\"$(gsettings get org.gnome.desktop.interface gtk-theme)\";
-            echo 'org.gnome.desktop.interface color-scheme '\"$(gsettings get org.gnome.desktop.interface color-scheme)\";
-            echo 'org.gnome.desktop.background picture-uri '\"$(gsettings get org.gnome.desktop.background picture-uri)\";
-            echo 'org.gnome.desktop.background picture-uri-dark '\"$(gsettings get org.gnome.desktop.background picture-uri-dark)\";
-        } > \"$backup_file\"
-
-        # Apply the new theme and wallpaper
-        echo 'Applying new settings...'
-        gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET'
-        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
-        gsettings set org.gnome.desktop.background picture-uri 'file://$WALLPAPER_PATH'
-        gsettings set org.gnome.desktop.background picture-uri-dark 'file://$WALLPAPER_PATH'
-    "
-
-    printMsg "Everforest theme and wallpaper applied successfully!"
-    printMsg "A backup of your previous settings was saved to: $backup_file"
-    printMsg "You may need to restart GNOME Shell (Alt+F2, r, Enter) or reboot for the full effect."
-}
-
-post_remove() {
-    local user=$(_get_user)
-    if [ -z "$user" ] || [ "$user" = "root" ]; then
-        printMsg "Could not determine user. Please restore your theme manually."
-        return
-    fi
-    
-    local user_home
-    user_home=$(getent passwd "$user" | cut -d: -f6)
-    if [ -z "$user_home" ]; then
-        return
-    fi
-
-    local uid
-    uid=$(id -u "$user")
-    
-    # Find the latest backup file
-    local latest_backup
-    latest_backup=$(find "$user_home/.config" -name 'gnome-settings-backup-*.txt' -print0 | xargs -0 ls -t | head -n 1)
-
-    if [ -f "$latest_backup" ]; then
-        printMsg "Restoring previous GNOME settings from $(basename "$latest_backup")..."
-        su - "$user" -c "
-            export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/$uid/bus'
-            while read -r schema key value; do
-                gsettings set \"\$schema\" \"\$key\" \"\$value\"
-            done < \"$latest_backup\"
-        "
-        # Optional: remove the backup file after restoring
-        # rm "$latest_backup"
-    else
-        printMsg "No settings backup found. Resetting to GNOME defaults."
-        su - "$user" -c "
-            export DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/$uid/bus'
-            gsettings reset org.gnome.desktop.interface gtk-theme
-            gsettings reset org.gnome.desktop.interface color-scheme
-        "
-    fi
-
-    printMsg "Everforest theme removed and settings restored."
+    _run_helper install
+    _print_hint
 }
 
 post_upgrade() {
-    printMsg "Re-applying Everforest theme after upgrade..."
-    post_install
+    _run_helper upgrade
+    _print_hint
+}
+
+pre_remove() {
+    _run_helper uninstall
+}
+
+post_remove() {
+    cat <<'EOF'
+==> Everforest theme files removed.
+==> If you skipped the helper, remove ~/.config overrides manually.
+EOF
 }

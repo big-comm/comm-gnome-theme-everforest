@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 # Helper to apply, refresh, or remove the Everforest theme per user
 
 set -e
@@ -7,7 +6,6 @@ set -e
 THEME_NAME="Everforest-Dark-Medium-B"
 WALLPAPER_NAME="bokeh-small-plant.avif"
 WALLPAPER_PATH="/usr/share/backgrounds/comm-gnome-theme-everforest/${WALLPAPER_NAME}"
-
 CONFIG_DIR="${HOME}/.config"
 STATE_DIR="${CONFIG_DIR}/comm-gnome-theme-everforest"
 STATE_USER_THEME_FILE="${STATE_DIR}/prev-user-theme"
@@ -36,16 +34,14 @@ printMsg() {
 
 usage() {
     cat <<'EOF'
-
 Usage: install.sh [--install|--upgrade|--uninstall] [--help]
 
 Actions:
-
-  --install, --apply    Apply the Everforest theme for the current user (default)
-  --upgrade             Re-apply the theme after a package upgrade
-  --uninstall, --remove Remove the theme changes and restore backups if available
-  --help                Show this message
-
+  --install, --apply   Apply the Everforest theme for the current user (default)
+  --upgrade            Re-apply the theme after a package upgrade
+  --uninstall, --remove
+                       Remove the theme changes and restore backups if available
+  --help               Show this message
 EOF
 }
 
@@ -54,6 +50,7 @@ backup_config() {
     if [ ! -f "${file}" ]; then
         return
     fi
+
     local dest="${file}.backup-${_backup_suffix}"
     if cp "${file}" "${dest}"; then
         printMsg "Backing up $(basename "${file}")..."
@@ -67,6 +64,7 @@ restore_backup() {
     shopt -s nullglob
     local backups=("${file}.backup-"*)
     shopt -u nullglob
+
     if [ "${#backups[@]}" -gt 0 ]; then
         local latest="${backups[-1]}"
         if cp "${latest}" "${file}"; then
@@ -119,6 +117,7 @@ set_gsettings_with_backup() {
         printMsg "gsettings unavailable; skipping ${schema} ${key}."
         return 1
     fi
+
     save_gsettings_value "${schema}" "${key}" "${backup_file}"
     if gsettings set "${schema}" "${key}" "${target_value}"; then
         if [ -n "${description}" ]; then
@@ -135,10 +134,12 @@ link_gtk4_assets() {
     printMsg "Linking GTK4 assets..."
     local gtk4_assets="${CONFIG_DIR}/gtk-4.0/assets"
     local theme_assets="/usr/share/themes/${THEME_NAME}/gtk-4.0/assets"
+
     if [ -d "${theme_assets}" ]; then
         rm -rf "${gtk4_assets}"
         ln -sf "${theme_assets}" "${gtk4_assets}"
     fi
+
     for css_file in gtk.css gtk-dark.css; do
         if [ -f "/usr/share/themes/${THEME_NAME}/gtk-4.0/${css_file}" ]; then
             rm -f "${CONFIG_DIR}/gtk-4.0/${css_file}"
@@ -158,10 +159,11 @@ unlink_gtk4_assets() {
 
 apply_wallpaper() {
     if [ ! -f "${WALLPAPER_PATH}" ]; then
-        printMsg "[3/4] Wallpaper file not found at ${WALLPAPER_PATH}"
+        printMsg "[3/3] Wallpaper file not found at ${WALLPAPER_PATH}"
         return
     fi
-    printMsg "[3/4] Setting wallpaper..."
+
+    printMsg "[3/3] Setting wallpaper..."
     local target_path="${WALLPAPER_PATH}"
     if command -v heif-convert &>/dev/null; then
         mkdir -p "$(dirname "${CONVERTED_WALLPAPER}")"
@@ -171,10 +173,12 @@ apply_wallpaper() {
             printMsg "Warning: heif-convert failed; wallpaper not converted."
         fi
     fi
+
     local uri="'file://${target_path}'"
     set_gsettings_with_backup \
         org.gnome.desktop.background picture-uri "${uri}" "${STATE_WALL_FILE}" \
         "Wallpaper set for light mode." || printMsg "Wallpaper file installed manually."
+
     set_gsettings_with_backup \
         org.gnome.desktop.background picture-uri-dark "${uri}" "${STATE_WALL_DARK_FILE}" \
         "Wallpaper set for dark mode." || true
@@ -189,20 +193,21 @@ remove_wallpaper() {
     restore_gsettings_value org.gnome.desktop.background picture-uri-dark "${STATE_WALL_DARK_FILE}"
 }
 
-
-
 apply_gsettings_theme() {
     if ! command -v gsettings &>/dev/null; then
         printMsg "gsettings not available; skipping GNOME interface update."
         return
     fi
+
     local theme_value="'${THEME_NAME}'"
     set_gsettings_with_backup \
         org.gnome.shell.extensions.user-theme name "${theme_value}" "${STATE_USER_THEME_FILE}" \
         "Shell user-theme set to ${THEME_NAME}." || true
+
     set_gsettings_with_backup \
         org.gnome.desktop.interface gtk-theme "${theme_value}" "${STATE_GTK_THEME_FILE}" \
         "GNOME interface theme set to ${THEME_NAME}."
+
     set_gsettings_with_backup \
         org.gnome.desktop.interface color-scheme "'prefer-dark'" "${STATE_COLOR_FILE}" \
         "Color scheme set to prefer-dark."
@@ -211,10 +216,13 @@ apply_gsettings_theme() {
 apply_theme() {
     printMsg "Installing Everforest Medium Dark Theme"
     echo ""
+
     local gtk3_config="${CONFIG_DIR}/gtk-3.0/settings.ini"
     local gtk4_config="${CONFIG_DIR}/gtk-4.0/settings.ini"
-    printMsg "[1/4] Configuring GTK3 theme..."
+
+    printMsg "[1/3] Configuring GTK3 theme..."
     mkdir -p "${CONFIG_DIR}/gtk-3.0"
+
     if [ -f "${gtk3_config}" ]; then
         backup_config "${gtk3_config}"
         if grep -q "gtk-theme-name" "${gtk3_config}"; then
@@ -226,14 +234,13 @@ apply_theme() {
         cat >"${gtk3_config}" <<EOF
 [Settings]
 gtk-theme-name=${THEME_NAME}
-gtk-icon-theme-name=Tela-circle-Dark
 gtk-application-prefer-dark-theme=true
-gtk-font-name=Sans 11
-gtk-cursor-theme-name=Everforest-cursors
 EOF
     fi
-    printMsg "[2/4] Configuring GTK4 theme..."
+
+    printMsg "[2/3] Configuring GTK4 theme..."
     mkdir -p "${CONFIG_DIR}/gtk-4.0"
+
     if [ -f "${gtk4_config}" ]; then
         backup_config "${gtk4_config}"
         if grep -q "gtk-theme-name" "${gtk4_config}"; then
@@ -245,46 +252,41 @@ EOF
         cat >"${gtk4_config}" <<EOF
 [Settings]
 gtk-theme-name=${THEME_NAME}
-gtk-icon-theme-name=Tela-circle-Dark
 gtk-application-prefer-dark-theme=true
-gtk-font-name=Sans 11
-gtk-cursor-theme-name=Everforest-cursors
 EOF
     fi
+
     link_gtk4_assets
+    apply_wallpaper
     apply_gsettings_theme
 
-    apply_wallpaper
-
-    if command -v gsettings &>/dev/null; then
-        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
-        printMsg "${lightGreen}Color scheme set to prefer-dark${reset}"
-    fi
-
-    # Reiniciar portais para aplicar mudanças
-    killall xdg-desktop-portal-gtk 2>/dev/null || true
-    killall xdg-desktop-portal-gnome 2>/dev/null || true
-
     echo ""
-    printMsg "${lightGreen}Everforest theme applied successfully!${reset}"
+    printMsg "Installation complete!"
+    echo ""
+    printMsg "Theme: ${THEME_NAME}"
+    echo -e "${white}Use gsettings or GNOME Tweaks if you need to reapply manually.${reset}"
+    echo ""
 }
 
 remove_theme() {
     printMsg "Removing Everforest theme customizations"
     local gtk3_config="${CONFIG_DIR}/gtk-3.0/settings.ini"
     local gtk4_config="${CONFIG_DIR}/gtk-4.0/settings.ini"
+
     if [ -f "${gtk3_config}" ] || has_backup "${gtk3_config}"; then
         restore_backup "${gtk3_config}"
     fi
+
     if [ -f "${gtk4_config}" ] || has_backup "${gtk4_config}"; then
         restore_backup "${gtk4_config}"
     fi
-    unlink_gtk4_assets
 
+    unlink_gtk4_assets
     remove_wallpaper
     restore_gsettings_value org.gnome.desktop.interface gtk-theme "${STATE_GTK_THEME_FILE}"
     restore_gsettings_value org.gnome.desktop.interface color-scheme "${STATE_COLOR_FILE}"
     restore_gsettings_value org.gnome.shell.extensions.user-theme name "${STATE_USER_THEME_FILE}"
+
     printMsg "Theme settings removed. Re-run with --install to apply again."
 }
 
