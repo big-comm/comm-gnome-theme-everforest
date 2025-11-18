@@ -111,4 +111,32 @@ package() {
         sed -i "s/^MetacityTheme=.*/MetacityTheme=${_theme_target}/" "${theme_index}"
     fi
 
+        # --------------------------------------------------------------------------
+    # [FIX] Apply custom CSS fix for Loupe image viewer (and other Adwaita apps)
+    # --------------------------------------------------------------------------
+    local gtk_css_file="${pkgdir}/usr/share/themes/${_theme_target}/gtk-4.0/gtk.css"
+    
+    if [ -f "${gtk_css_file}" ]; then
+        echo "Applying custom CSS fix for AdwPreferencesGroup in wide layouts"
+        cat >> "${gtk_css_file}" <<EOF
+
+/* Custom fix for comm-gnome-theme-everforest */
+/*
+* Fixes illegible text color in Loupe's properties sidebar when the window is wide.
+* In wide layouts, AdwPreferencesGroup inherits a card-style background without the
+* corresponding text color change. This forces the correct light text color for
+* titles and subtitles within it, ensuring readability in all layouts.
+*/
+AdwPreferencesGroup .title {
+    color: #2d353b;
+}
+
+AdwPreferencesGroup .subtitle {
+    color: rgba(255, 251, 239, 0.7);
+}
+EOF
+    else
+        echo "Warning: Could not find ${gtk_css_file} to apply fixes."
+    fi
+
 }
