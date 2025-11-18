@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# pkgbuild.install - Installation script para comm-gnome-theme-everforest
-# Baseado no padrão do Dracula mas adaptado para Everforest
+# pkgbuild.install - Installation script for comm-gnome-theme-everforest
+# Enhanced with robust backup and restore.
 
 # Color definitions for status messages
 blueDark="\e[1;38;5;33m"     # Bold dark blue
@@ -43,6 +43,18 @@ post_install() {
         printMsg "Could not determine home directory for user $user. Skipping."
         return
     fi
+
+    # Backup current GNOME settings to a file
+    local backup_file="$user_home/.config/gnome-settings-backup-everforest.txt"
+    printMsg "Backing up current GNOME settings to $backup_file..."
+    su - "$user" -c "
+        export DISPLAY=:0;
+        export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$user")/bus;
+        {
+            echo org.gnome.desktop.interface gtk-theme \$(gsettings get org.gnome.desktop.interface gtk-theme);
+            echo org.gnome.desktop.interface color-scheme \$(gsettings get org.gnome.desktop.interface color-scheme);
+        } > \"$backup_file\"
+    "
 
     # Define theme paths
     local THEMES_DIR="/usr/share/themes"
@@ -101,30 +113,16 @@ post_install() {
 
     # Apply GNOME settings using proper su - context
     printMsg "Applying GNOME settings for user $user..."
-
-    # Find DISPLAY and XDG_RUNTIME_DIR
-    local uid
-    uid=$(id -u "$user")
-    local runtime_dir="/run/user/$uid"
-
     su - "$user" -c "
         export DISPLAY=:0
-        export DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus
+        export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$user")/bus
         
-        # Set GTK theme via gsettings
-        gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET' 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET'
+        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
         
-        # Set color scheme to dark
-        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null || true
-        
-        # Verify settings
-        echo 'GTK Theme:' \$(gsettings get org.gnome.desktop.interface gtk-theme)
-        echo 'Color Scheme:' \$(gsettings get org.gnome.desktop.interface color-scheme)
-    " 2>/dev/null || {
-        printMsg "Warning: gsettings apply failed. Try manually with:"
-        printMsg "  gsettings set org.gnome.desktop.interface gtk-theme '$THEME_TARGET'"
-        printMsg "  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'"
-    }
+        echo 'GTK Theme set to:' \$(gsettings get org.gnome.desktop.interface gtk-theme)
+        echo 'Color Scheme set to:' \$(gsettings get org.gnome.desktop.interface color-scheme)
+    "
 
     # Clear GTK cache to force reload
     printMsg "Clearing GTK cache..."
@@ -142,7 +140,7 @@ pre_remove() {
 
 # Function executed after package removal
 post_remove() {
-    printMsg "Removing Everforest theme and restoring backups if available..."
+    printMsg "Removing Everforest theme and restoring previous settings..."
 
     local user
     user=$(logname 2>/dev/null)
@@ -164,41 +162,53 @@ post_remove() {
     local backup_dir="$user_home/backup_customizations"
     local GTK4_DIR="$user_home/.config/gtk-4.0"
     local GTK3_DIR="$user_home/.config/gtk-3.0"
+    local backup_file="$user_home/.config/gnome-settings-backup-everforest.txt"
+
+    # Restore GNOME settings from backup file
+    if [ -f "$backup_file" ]; then
+        printMsg "Restoring GNOME settings from $backup_file..."
+        while IFS= read -r line; do
+            schema=$(echo "$line" | awk '{print $1}')
+            key=$(echo "$line" | awk '{print $2}')
+            value=$(echo "$line" | cut -d' ' -f3-)
+
+            su - "$user" -c "
+                export DISPLAY=:0;
+                export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u "$user")/bus;
+                gsettings set $schema $key $value
+            "
+        done < "$backup_file"
+        rm "$backup_file"
+    else
+        printMsg "No GNOME settings backup found. Skipping restoration."
+    fi
 
     # Remove current GTK directories
     printMsg "Removing current GTK directories..."
     rm -rf "$GTK4_DIR" "$GTK3_DIR" 2>/dev/null || true
 
-    # Restore from backup if available
+    # Restore GTK directories from backup if available
     if [ -d "$backup_dir" ]; then
         printMsg "Restoring GTK directories from backups..."
-        for backup in "$backup_dir"/gtk-*-*.tar.gz; do
-            if [ -f "$backup" ]; then
-                printMsg "Restoring from $(basename "$backup")..."
-                tar -xzf "$backup" -C "$user_home/.config/" 2>/dev/null || true
-            fi
-        done
+        # Find the latest backup for each directory
+        latest_gtk4_backup=$(ls -t "$backup_dir"/gtk-4.0-*.tar.gz 2>/dev/null | head -n1)
+        latest_gtk3_backup=$(ls -t "$backup_dir"/gtk-3.0-*.tar.gz 2>/dev/null | head -n1)
+
+        if [ -f "$latest_gtk4_backup" ]; then
+            printMsg "Restoring from $(basename "$latest_gtk4_backup")..."
+            tar -xzf "$latest_gtk4_backup" -C "$user_home/.config/" 2>/dev/null || true
+        fi
+        if [ -f "$latest_gtk3_backup" ]; then
+            printMsg "Restoring from $(basename "$latest_gtk3_backup")..."
+            tar -xzf "$latest_gtk3_backup" -C "$user_home/.config/" 2>/dev/null || true
+        fi
     fi
-
-    # Restore default GNOME settings
-    printMsg "Restoring default GNOME settings..."
-    local uid
-    uid=$(id -u "$user")
-    local runtime_dir="/run/user/$uid"
-
-    su - "$user" -c "
-        export DBUS_SESSION_BUS_ADDRESS=unix:path=$runtime_dir/bus
-        
-        # Reset to default GNOME theme
-        gsettings reset org.gnome.desktop.interface gtk-theme 2>/dev/null || true
-        gsettings reset org.gnome.desktop.interface color-scheme 2>/dev/null || true
-    " 2>/dev/null || true
 
     # Clear GTK cache
     rm -rf "$user_home/.cache/gtk-4.0" 2>/dev/null || true
     rm -rf "$user_home/.cache/gtk-3.0" 2>/dev/null || true
 
-    printMsg "Everforest theme removed successfully"
+    printMsg "Everforest theme removed and previous settings restored."
 }
 
 # Function executed after package upgrade
