@@ -625,7 +625,7 @@ unset_gtk_theme_env
 
 echo ""
 
-printMsg "Everforest theme successfully removed!"
+printMsg "Everforest theme successfully removed! Restart Session."
 
 }
 
